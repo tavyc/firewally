@@ -25,7 +25,7 @@ esac
 shopt -s extglob
 
 # Version
-FIREWALLY_VERSION='0.3'
+FIREWALLY_VERSION='0.4'
 FIREWALLY_REVISION='$Id$'
 _FWY_CONFIG_VERSION=1
 
@@ -459,6 +459,13 @@ _fwy_load_iptables()
 	done < "$chainfile"
     done
 
+    # Success, clear unused tables
+    for table in $(</proc/net/ip_tables_names); do
+	if [ ! -d "${_FWY_TMP}/fw/$table" ]; then
+	    _fwy_clear "$table" ACCEPT || return 1
+	fi
+    done
+
     return 0
 }
 
@@ -820,7 +827,7 @@ _fwy_rule()
     fi
 
     # Expand negative rules
-    if [ -n "$ifacenot$ofacenot$srcnot$protonot$srcportnot$dstportnot$icmptypenot$macnot$marknot$dscpnot$tosnot$servicenot" ]; then
+    if [ -n "$ifacenot$ofacenot$srcnot$dstnot$protonot$srcportnot$dstportnot$icmptypenot$macnot$marknot$dscpnot$tosnot$servicenot" ]; then
 	local oldchain="$_FWY_CHAIN"
 	local _FWY_CHAIN
 
@@ -852,7 +859,7 @@ _fwy_rule()
 	fi
 	if [ -n "$dstnot" ]; then
 	    for adst in $dst; do
-		_fwy_iptables -s "$adst" -j RETURN || return 1
+		_fwy_iptables -d "$adst" -j RETURN || return 1
 	    done
 	    dst=any
 	fi
@@ -896,7 +903,6 @@ _fwy_rule()
 	    for aproto in $proto; do
 		_fwy_iptables -p "$aproto" -j RETURN || return 1
 	    done
-	    proto=any
 	fi
 	if [ -n "$servicenot" ]; then
 	    local dp
@@ -956,7 +962,6 @@ _fwy_rule()
 		esac
 	    done
 	    services=any
-	    proto=any
 	fi
 	if [ -n "$macnot" ]; then
 	    for amac in $mac; do
@@ -989,9 +994,30 @@ _fwy_rule()
 	    log=
 	fi
 
-	# create rule
-	# @@@ reject-with tcp-reset?
-	_fwy_iptables -j "$action" $action_args || return 1
+	# create action rules
+	for aservice in $services; do
+	    case "$aservice" in
+		any)
+		    ;;
+		*/*)
+		    proto="${aservice%%/*}"
+		    ;;
+	    esac
+	    for aproto in $proto; do
+		case "$aproto-$action-$action_args" in
+		    any-*-*)
+			_fwy_iptables -j "$action" $action_args || return 1
+			;;
+		    tcp-REJECT-)
+			_fwy_iptables -p tcp -j REJECT --reject-with tcp-reset || return 1
+			;;
+		    *)
+			_fwy_iptables -p "$aproto" -j "$action" $action_args || return 1
+			;;
+		esac
+	    done
+	done
+	[ -n "$protonot$servicenot" ] && proto=any
 
 	action="$_FWY_CHAIN" action_args= action_is_chain=1
 	_FWY_CHAIN="$oldchain"
@@ -1839,6 +1865,10 @@ case "$_FWY_MODE" in
     stop)
 	# Stop firewall
 	echo -n "firewally: Stopping firewall: "
+	if [ ! -f /proc/net/ip_tables_names ]; then
+	    echo "done"
+	    exit 0
+	fi
 	if _fwy_clear "" ACCEPT; then
 	    echo "done"
 	    exit 0
@@ -1851,6 +1881,8 @@ case "$_FWY_MODE" in
     panic)
 	# Block firewall
 	echo -n "firewally: Blocking firewall${SSH_CLIENT:+, allowing access from $SSH_CLIENT}: "
+	# ensure the filter table is loaded
+	${_FWY_IPTABLES_CMD} -t filter -nvL INPUT >/dev/null
 	if _fwy_clear "" DROP "$SSH_CLIENT"; then
 	    echo "done"
 	    exit 0
@@ -2052,7 +2084,7 @@ fi
 # Load connection-tracking / nat modules
 _fwy_verbose "Loading kernel conntrack/nat modules"
 modules=
-modules_skip=`${_FWY_LSMOD_CMD} | ${_FWY_AWK_CMD} '/^ip_/ { printf "%s ", $1 }'`
+modules_skip=`${_FWY_LSMOD_CMD} | ${_FWY_AWK_CMD} '/^ip_(conntrack|nat)_/ { printf "%s ", $1 }'`
 moddir=/lib/modules/$(uname -r)/kernel/net/ipv4/netfilter
 for module in $FIREWALLY_MODULES; do
     case "$module" in

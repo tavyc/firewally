@@ -1,0 +1,12 @@
+Source: firewally
+Section: net
+Priority: optional
+Maintainer: Octavian Cerna <tavy@ylabs.com>
+Build-Depends: debhelper (>= 4.0.0)
+Standards-Version: 3.6.0
+
+Package: firewally
+Architecture: all
+Depends: bash (>= 2.05), gawk (>= 3.0), iptables (>= 1.2.6), less, modutils | module-init-tools
+Description: An easy to use but powerful iptables zone-based firewall
+ An easy to use but powerful iptables zone-based firewall

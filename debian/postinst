@@ -1,0 +1,10 @@
+#!/bin/sh -e
+
+case "$1" in
+	configure)
+		update-rc.d firewally start 38 S . start 36 0 6 . > /dev/null
+		;;
+
+	abort-upgrade|abort-remove|abort-deconfigure)
+		;;
+esac

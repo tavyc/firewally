@@ -219,7 +219,7 @@ EOF
 -A INPUT -j DROP
 -A INPUT_1 -s pc1 -j RETURN
 -A INPUT_1 -s pc2 -j RETURN
--A INPUT_1 -j ACCEPT
+-A INPUT_1 -p tcp -j ACCEPT
 -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 -A OUTPUT -o lo -j ACCEPT
 -A OUTPUT -j ACCEPT
@@ -243,8 +243,8 @@ EOF
 -A INPUT -s pc2 -j INPUT_1
 -A INPUT -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT DROP: " --log-level notice
 -A INPUT -j DROP
--A INPUT_1 -s server1 -j RETURN
--A INPUT_1 -s server2 -j RETURN
+-A INPUT_1 -d server1 -j RETURN
+-A INPUT_1 -d server2 -j RETURN
 -A INPUT_1 -p tcp --dstport 80 -j RETURN
 -A INPUT_1 -p tcp --dstport 443 -j RETURN
 -A INPUT_1 -p tcp --dstport 25 -j RETURN
@@ -255,6 +255,56 @@ EOF
 -A INPUT_1 -p tcp --dstport 995 -j RETURN
 -A INPUT_1 -p tcp --dstport 993 -j RETURN
 -A INPUT_1 -j ACCEPT
+-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -j ACCEPT
+COMMIT
+TEST syntax: dst not (bug in r60)
+firewally
+FIREWALLY_USE_MPORT=0
+accept dst not server1,server2
+EOF
+*filter
+:FORWARD -
+:INPUT -
+:INPUT_1 -
+:OUTPUT -
+-A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A FORWARD -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: FORWARD DROP: " --log-level notice
+-A FORWARD -j DROP
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -j INPUT_1
+-A INPUT -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT DROP: " --log-level notice
+-A INPUT -j DROP
+-A INPUT_1 -d server1 -j RETURN
+-A INPUT_1 -d server2 -j RETURN
+-A INPUT_1 -j ACCEPT
+-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -j ACCEPT
+COMMIT
+TEST syntax: proto is distributed to actions (bug in r60)
+firewally
+FIREWALLY_USE_MPORT=0
+reject service smtp dst not server1,server2
+EOF
+*filter
+:FORWARD -
+:INPUT -
+:INPUT_1 -
+:OUTPUT -
+-A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A FORWARD -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: FORWARD DROP: " --log-level notice
+-A FORWARD -j DROP
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -p tcp --dport smtp -j INPUT_1
+-A INPUT -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT DROP: " --log-level notice
+-A INPUT -j DROP
+-A INPUT_1 -d server1 -j RETURN
+-A INPUT_1 -d server2 -j RETURN
+-A INPUT_1 -p tcp -j REJECT --reject-with tcp-reset
 -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 -A OUTPUT -o lo -j ACCEPT
 -A OUTPUT -j ACCEPT
