@@ -5,6 +5,8 @@ version <v>
 
 zone <name> [<ifaces>:]<addrs>|<ifaces> ...
 
+mac <iface> <ip> <mac>
+
 chain [<table>] <chain>
     policy <action> [<param>...]
     protection <types> [<rate>] [<burst>]
@@ -42,6 +44,7 @@ actions:
     log <text> [level <l>]
     loglimit <text> [level <l>]
     jump [to] <chain>
+    queue
     target <string>
     reject [with type]
     masquerade

@@ -153,6 +153,26 @@ EOF
 -A OUTPUT -o lo -j ACCEPT
 -A OUTPUT -j ACCEPT
 COMMIT
+TEST syntax: queue action
+firewally
+queue service ping
+EOF
+*filter
+:FORWARD -
+:INPUT -
+:OUTPUT -
+-A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A FORWARD -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: FORWARD DROP: " --log-level notice
+-A FORWARD -j DROP
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -p icmp --icmp-type echo-request -j QUEUE
+-A INPUT -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT DROP: " --log-level notice
+-A INPUT -j DROP
+-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -j ACCEPT
+COMMIT
 TEST syntax: target and match
 firewally
 target "REJECT --reject-with tcp-reset" proto tcp match "-m limit --limit 2/sec"
