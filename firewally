@@ -25,7 +25,7 @@ esac
 shopt -s extglob
 
 # Version
-FIREWALLY_VERSION='0.5'
+FIREWALLY_VERSION='0.6'
 FIREWALLY_REVISION='$Id$'
 _FWY_CONFIG_VERSION=1
 
@@ -747,7 +747,6 @@ _fwy_rule()
 		else
 		    action=IMQ
 		fi
-		shift
 		;;
 	    target)
 		[ -n "$action" ] && _fwy_warning "overriding parameter: action '$action' becomes '$2'"
@@ -1724,6 +1723,12 @@ mac()
     _fwy_rule goto mac_invalid iface "$1" src "$2" mac "!$3"
 }
 
+# postprocess command ...
+postprocess()
+{
+    echo "$@" >> "${_FWY_TMP}/post"
+}
+
 # }}}
 
 # {{{ Main
@@ -1994,8 +1999,8 @@ _fwy_verbose "Preprocessing source"
 [ -r "$FIREWALLY_CONFIG" ] || _fwy_fatal "cannot read configuration file '$FIREWALLY_CONFIG'"
 
 ${_FWY_AWK_CMD} "/^[[:space:]]*(accept|chain|dnat|drop|from|goto|imq|iptables|jump|log|loglimit\
-mac||masq|masquerade|policy|protection|redirect|reject|ret|rule|service|setdscp|setmark|settos|\
-snat|target|version|zone)\\>/ \
+|mac|masq|masquerade|policy|postprocess|protection|redirect|reject|ret|rule|service|setdscp\
+|setmark|settos|snat|target|version|zone)\\>/ \
 { printf \"_FWY_LINENO=%d; \", NR }
 { print }" "$FIREWALLY_CONFIG" > "${_FWY_TMP}/source.config" || \
     _fwy_fatal "cannot convert source file"
@@ -2124,6 +2129,12 @@ for module in $modules; do
 	    ;;
     esac
 done
+
+# run postprocess commands
+if [ -f "${_FWY_TMP}/post" ]; then
+    _fwy_verbose "Running postprocess commands"
+    source "${_FWY_TMP}/post"
+fi
 
 echo "done"
 
