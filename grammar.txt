@@ -1,0 +1,54 @@
+command := version | chain | rule | zone | rules
+special zones := fw | any
+
+version <v>
+
+zone <name> [<ifaces>:]<addrs>|<ifaces> ...
+
+chain [<table>] <chain>
+    policy <action> [<param>...]
+    protection <types> [<rate>] [<burst>]
+    <action> <param>...
+
+from <zone> [to] <zone>
+    policy <action> [<param>...]
+    protection <types> [<rate>] [<burst>]
+    <action> <param>...
+
+rule params:
+    state <s>
+    interface <ifs>
+    outerface <ifs>
+    src <addrs>
+    dst <addrs>
+    proto <ps>
+    srcport <ports>
+    dstport <ports>
+    icmptype <types>
+    mac <macs>
+    mark <marks>
+    dscp <dscps>
+    tos <toss>
+    limit <frequency> [burst <burst>]
+    log <text> [level <l>]
+    loglimit <text> [level <l>]
+    match <string>
+    service <srv>
+
+actions:
+    accept
+    drop
+    return
+    log <text> [level <l>]
+    loglimit <text> [level <l>]
+    jump [to] <chain>
+    target <string>
+    reject [with type]
+    masquerade
+    snat [to] <addr>
+    dnat [to] <addr>
+    redirect [to] <port>
+    setmark <mark>
+    settos <tos>
+    setdscp <dscp>
+    imq [to <dev>]

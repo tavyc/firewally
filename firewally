@@ -25,12 +25,12 @@ esac
 shopt -s extglob
 
 # Version
-FIREWALLY_VERSION='0.0'
+FIREWALLY_VERSION='0.1'
 FIREWALLY_REVISION='$Id$'
 _FWY_CONFIG_VERSION=1
 
 # Basic options
-: "${FIREWALLY_CONFIG:=/etc/firewall/firewally.conf}"
+: "${FIREWALLY_CONFIG:=/etc/firewally/firewall.conf}"
 : "${FIREWALLY_USE_MPORT:=1}"
 : "${FIREWALLY_USE_IPTABLES_RESTORE:=1}"
 FIREWALLY_STATEFUL=1
@@ -38,16 +38,17 @@ FIREWALLY_ROUTING=1
 FIREWALLY_MODULES="all"
 
 # Default policies
-FIREWALLY_DEFAULT_filter_INPUT_POLICY="drop loglimit"
-FIREWALLY_DEFAULT_filter_OUTPUT_POLICY="accept"
-FIREWALLY_DEFAULT_filter_FORWARD_POLICY="drop loglimit"
-FIREWALLY_DEFAULT_filter_unroutable_POLICY="drop loglimit"
-FIREWALLY_DEFAULT_SYNFLOOD_LIMIT=50/second
-FIREWALLY_DEFAULT_ICMPFLOOD_LIMIT=20/second
+FIREWALLY_filter_INPUT_POLICY="drop loglimit"
+FIREWALLY_filter_OUTPUT_POLICY="accept"
+FIREWALLY_filter_FORWARD_POLICY="drop loglimit"
+FIREWALLY_filter_unroutable_POLICY="drop loglimit"
+FIREWALLY_SYNFLOOD_LIMIT=50/second
+FIREWALLY_ICMPFLOOD_LIMIT=20/second
 
 # Logging options
 FIREWALLY_LOG_TEXT='FW: ${chain}${action:+ $action}${text:+ $text}: '
-FIREWALLY_LOG_LEVEL="warning"
+FIREWALLY_LOG_TEXT_TRUNC='FW: ${chain//_to_/2}${action:+ $action}: '
+FIREWALLY_LOG_LEVEL="notice"
 FIREWALLY_LOG_FREQUENCY="1/second"
 FIREWALLY_LOG_BURST="2"
 FIREWALLY_LOG_OPTIONS=""
@@ -60,17 +61,29 @@ PRIVATE_IPS="10.0.0.0/8 172.16.0.0/12 169.254.0.0/16 192.168.0.0/16 192.88.99.0/
 # The multicast address space
 MULTICAST_IPS="224.0.0.0/4"
 # All the Internet unroutable addresses
-UNROUTABLE_IPS="${RESERVED_IPS} ${PRIVATE_IPS}"
+UNROUTABLE_IPS="${PRIVATE_IPS} ${RESERVED_IPS}"
+# Safe/unsafe ICMP messages
+SAFE_ICMP="echo-reply,destination-unreachable,source-quench,echo-request,time-exceeded,parameter-problem"
+UNSAFE_ICMP="redirect,router-advertisement,router-solicitation,timestamp-request,timestamp-reply,address-mask-request,address-mask-reply"
 
 # Internal state
 _FWY_MODE=
 _FWY_VERBOSE=
 _FWY_TMP=
 _FWY_LINENO=
-_FWY_CURRENT_CHAIN=INPUT
-_FWY_CURRENT_TABLE=filter
-_FWY_RULES=rules
 _FWY_USING_IPTABLES=
+_FWY_COMMAND=
+_FWY_TABLE=filter
+_FWY_CHAIN=INPUT
+_FWY_RULES_INIT=1
+_FWY_RULES_ZONE_ANY1=2
+_FWY_RULES_ZONE_ANY2=3
+_FWY_RULES_ZONE_SEL=4
+_FWY_RULES_USER=5
+_FWY_RULES_POLICY=6
+_FWY_RULES=
+_FWY_ZONES=
+_FWY_ZONES_INIT=
 
 # }}}
 
@@ -79,18 +92,13 @@ _FWY_USING_IPTABLES=
 # Syntax: proto/[port[:port]][,...] ...
 
 service_ah="ah/"
-service_allirc="tcp/6660:6670,7000:7010"
-service_allmail="tcp/25,465,587,110,143,995,993"
-service_allpop="tcp/110,143,995,993"
-service_allsmtp="tcp/25,465,587"
-service_allweb="tcp/80,443"
 service_aol="tcp/5190:5193"
 service_apcupsd="tcp/6544"
 service_apcupsdnis="tcp/3551"
 service_aptproxy="tcp/9999"
+service_bittorrent="tcp/6881:6999"
 service_bootps="udp/67"
 service_coda="tcp/369:370,2430:2433 udp/369:370,2430:2433"
-service_cstrike="$service_halflife"
 service_cups="tcp/631"
 service_cvspserver="tcp/2401"
 service_dcpp="tcp/1412 udp/1412"
@@ -98,7 +106,6 @@ service_dhcps="udp/67"
 service_directplay="tcp/47624,2300:2400 udp/6073,2300:2400"
 service_dns="udp/53 tcp/53"
 service_edonkey="tcp/4661:4662 udp/4672,4665"
-service_emule="$service_edonkey"
 service_esp="esp/"
 service_gre="gre/"
 service_halflife="udp/27010:27020"
@@ -111,7 +118,6 @@ service_icq="tcp/5190:5193 udp/4000"
 service_ident="tcp/113"
 service_igmp="igmp/"
 service_ipencap="4/"
-service_ipip="$service_ipencap"
 service_ipsec="esp/ ah/ udp/500"
 service_irc="tcp/6666:6669"
 service_isakmp="udp/500"
@@ -151,7 +157,6 @@ service_socks="tcp/1080 udp/1080"
 service_squid="tcp/3128"
 service_ssdp="udp/1900"
 service_submission="tcp/587"
-service_sunrpc="$service_portmap"
 service_syslog="udp/514"
 service_talk="udp/517:518"
 service_tftp="udp/69"
@@ -171,6 +176,17 @@ service_x11="tcp/6000:6009"
 service_xdmcp="udp/177"
 service_xfs="tcp/7100"
 service_ymsgr="tcp/5050,5000:5001 udp/5000:5001"
+
+service_allirc="tcp/6660:6670,7000:7010"
+service_allmail="tcp/25,465,587,110,143,995,993"
+service_allpop="tcp/110,143,995,993"
+service_allsmtp="tcp/25,465,587"
+service_allweb="tcp/80,443"
+service_cstrike="$service_halflife"
+service_emule="$service_edonkey"
+service_ipip="$service_ipencap"
+service_safeicmp="icmp/$SAFE_ICMP"
+service_sunrpc="$service_portmap"
 
 # }}}
 
@@ -200,7 +216,7 @@ _fwy_warning()
 {
     echo >&2
     echo >&2 "firewally: Warning: $@"
-    [ -n "$_FWY_CURRENT_COMMAND" ] && echo >&2 "        in command: ${_FWY_CURRENT_COMMAND}"
+    [ -n "$_FWY_COMMAND" ] && echo >&2 "        in command: ${_FWY_COMMAND}"
     [ -n "$_FWY_LINENO" ] && echo >&2 "            source: ${FIREWALLY_CONFIG}:${_FWY_LINENO}"
     return 0
 }
@@ -210,7 +226,7 @@ _fwy_error()
 {
     echo >&2
     echo >&2 "firewally:   ERROR: $@"
-    [ -n "$_FWY_CURRENT_COMMAND" ] && echo >&2 "        in command: ${_FWY_CURRENT_COMMAND}"
+    [ -n "$_FWY_COMMAND" ] && echo >&2 "        in command: ${_FWY_COMMAND}"
     [ -n "$_FWY_LINENO" ] && echo >&2 "            source: ${FIREWALLY_CONFIG}:${_FWY_LINENO}"
     if [ "$_FWY_MODE" != explain -a -z "$_FWY_USING_IPTABLES" ]; then
 	enable exit
@@ -224,7 +240,7 @@ _fwy_fatal()
 {
     echo >&2
     echo >&2 "firewally:   FATAL: $@"
-    [ -n "$_FWY_CURRENT_COMMAND" ] && echo >&2 "        in command: ${_FWY_CURRENT_COMMAND}"
+    [ -n "$_FWY_COMMAND" ] && echo >&2 "        in command: ${_FWY_COMMAND}"
     [ -n "$_FWY_LINENO" ] && echo >&2 "            source: ${FIREWALLY_CONFIG}:${_FWY_LINENO}"
     enable exit
     exit 2
@@ -249,7 +265,7 @@ _fwy_valid_name()
 	return 1
     fi
     case "$name" in
-	+([a-zA-Z0-9_-]))
+	+([a-zA-Z0-9_]))
 	    ;;
 	*)
 	    _fwy_error "invalid $object name: '$name'"
@@ -279,27 +295,25 @@ _fwy_chain_builtin()
 # Return true if a chain exists in a table
 _fwy_chain_exists()
 {
-    [ -f "${_FWY_TMP}/fw/$1/$2/rules" ]
+    [ -d "${_FWY_TMP}/fw/$1/$2" ]
 }
 
 # _fwy_create_chain table chain
 # Create a new chain in a table and set the default policy
 _fwy_create_chain()
 {
-    local table="$1" chain="$2"
+    local table="$1" chain="$2" policyvar
 
-    if ! ${_FWY_MKDIR_CMD} -p "${_FWY_TMP}/fw/$table/$chain" || \
-       ! ${_FWY_TOUCH_CMD} "${_FWY_TMP}/fw/$table/$chain/rules" || \
-       ! ${_FWY_TOUCH_CMD} "${_FWY_TMP}/fw/$table/$chain/policy"; then
+    ${_FWY_MKDIR_CMD} -p "${_FWY_TMP}/fw/$table/$chain" || \
 	_fwy_fatal "cannot create chain '$chain' in table '$table'"
-    fi
 
     # Set default policy
-    local policyvar="FIREWALLY_DEFAULT_${table}_${chain}_POLICY"
+    policyvar="FIREWALLY_${table}_${chain}_POLICY"
     if [ -n "${!policyvar}" ]; then
-	local _FWY_CURRENT_TABLE="$table" _FWY_CURRENT_CHAIN="$chain"
-	local _FWY_RULES=policy
-	_fwy_rule ${!policyvar} || return 1
+	# @@@ debug
+	[ -f "${_FWY_TMP}/fw/$table/$chain/r${_FWY_RULES_POLICY}" ] && _fwy_fatal "policy already defined?"
+	_FWY_TABLE="$table" _FWY_CHAIN="$chain" _FWY_RULES=$_FWY_RULES_POLICY \
+	    _fwy_rule ${!policyvar} || return 1
     fi
     return 0
 }
@@ -312,12 +326,12 @@ _fwy_create_chain()
 # Create the initial firewall structure
 _fwy_initialize()
 {
-    local _FWY_RULES=rules _FWY_CURRENT_COMMAND= _FWY_LINENO=
+    local _FWY_RULES=$_FWY_RULES_INIT _FWY_COMMAND= _FWY_LINENO=
 
     _fwy_verbose "Initializing"
 
-    _FWY_CURRENT_TABLE=filter
-    _FWY_CURRENT_CHAIN=INPUT
+    _FWY_TABLE=filter
+    _FWY_CHAIN=INPUT
 
     _fwy_create_chain filter INPUT
     _fwy_create_chain filter OUTPUT
@@ -329,12 +343,11 @@ _fwy_initialize()
 	local chain
 	for chain in INPUT FORWARD OUTPUT; do
 	    _fwy_iptables filter $chain -m state --state ESTABLISHED,RELATED -j ACCEPT
-	    _fwy_iptables filter $chain -m state --state INVALID -j DROP
 	done
-	# Allow traffic from/to loopback
-	_fwy_iptables filter INPUT -i lo -j ACCEPT
-	_fwy_iptables filter OUTPUT -o lo -j ACCEPT
     fi
+    # Allow traffic from/to loopback
+    _fwy_iptables filter INPUT -i lo -j ACCEPT
+    _fwy_iptables filter OUTPUT -o lo -j ACCEPT
 
     return 0
 }
@@ -391,8 +404,8 @@ _fwy_load_restore()
 # Use iptables commands to load the firewall
 _fwy_load_iptables()
 {
-    local table tabledir chain chaindir
-    local _FWY_USING_IPTABLES=1
+    local table tabledir chain chaindir chainfile rule
+    local _FWY_USING_IPTABLES=1 _FWY_LINENO
 
     # Flush tables
     for tabledir in "${_FWY_TMP}/fw"/*; do
@@ -414,36 +427,25 @@ _fwy_load_iptables()
     done
 
     # Load rules
-    for chaindir in "${_FWY_TMP}/fw"/*/*; do
+    for chainfile in "${_FWY_TMP}/fw"/*/*/r*; do
+	chaindir="${chainfile%/*}"
 	table="${chaindir%/*}"
 	table="${table##*/}"
 	chain="${chaindir##*/}"
-	_fwy_load_iptables_rules rules || return 1
-	_fwy_load_iptables_rules policy || return 1
+	while read rule; do
+	    case "$rule" in
+		"# source:"*)
+		    _FWY_LINENO="${rule##*:}"
+		    ;;
+		-*)
+		    if ! eval "${_FWY_IPTABLES_CMD} -t $table $rule"; then
+			_fwy_error "command failed: ${_FWY_IPTABLES_CMD} -t $table $rule"
+			return 1
+		    fi
+	    esac
+	done < "$chainfile"
     done
 
-    return 0
-}
-
-# _fwy_load_iptables_rules rulesfile
-# Execute iptables commands for rulesfile
-# Uses dynamic vars: table rule chaindir
-_fwy_load_iptables_rules()
-{
-    local rule
-
-    while read rule; do
-	case "$rule" in
-	    "# source:"*)
-		_FWY_LINENO="${rule##*:}"
-		;;
-	    -A*)
-		if ! eval "${_FWY_IPTABLES_CMD} -t $table $rule"; then
-		    _fwy_error "command failed: ${_FWY_IPTABLES_CMD} -t $table $rule"
-		    return 1
-		fi
-	esac
-    done < "$chaindir/$1"
     return 0
 }
 
@@ -458,7 +460,7 @@ _fwy_iptables()
     local table="$1" chain="$2"
     shift 2
 
-    echo "-A $chain $@" >> "${_FWY_TMP}/fw/$table/$chain/$_FWY_RULES" || \
+    echo "-A $chain $@" >> "${_FWY_TMP}/fw/$table/$chain/r$_FWY_RULES" || \
     	_fwy_fatal "error writing chain rules"
 
     if [ "$_FWY_MODE" = explain ]; then
@@ -487,13 +489,10 @@ _fwy_rule()
     local dscp=any adscp
     local tos=any atos
     local state=any
-    local limit=
-    local limit_burst=
+    local limit= limit_burst=
     local match=
-    local log=
-    local action=
-    local action_args=
-    local log_match= log_args=
+    local log= log_match= log_args=
+    local action= action_args= action_is_chain=
 
     # Parse arguments
     while [ $# -gt 0 ]; do
@@ -565,15 +564,25 @@ _fwy_rule()
 		;;
 	    log | loglimit | log-limit)
 		local log_arg="$1" text="$2" log_text= log_level=
-		local table="$_FWY_CURRENT_TABLE" chain="$_FWY_CURRENT_CHAIN"
+		local table="$_FWY_TABLE" chain="$_FWY_CHAIN"
 
 		shift 2 || shift
 		if [ "$1" = level ]; then
 		    log_level="$2"
 		    shift 2 || shift
 		fi
+		case "$text" in
+		    *[\"\\]*)
+			_fwy_error "invalid parameter for '$log_arg': quotes and backslashes are not allowed"
+			return 1
+			;;
+		esac
 		[ "$action" = LOG -o -n "$log" ] && _fwy_warning "ignoring parameter: '$log_arg'" && continue
 		eval "log_text=\"${FIREWALLY_LOG_TEXT}\""
+		if [ "${#log_text}" -gt 29 ]; then
+		    eval "log_text=\"${FIREWALLY_LOG_TEXT_TRUNC}\""
+		    [ "${#log_text}" -gt 29 ] && log_text="${log_text:1:29}"
+		fi
 		if [ -n "$action" ]; then
 		    log="LOG"
 		    log_match=
@@ -611,7 +620,7 @@ _fwy_rule()
 	    jump | goto)
 		[ -n "$action" ] && _fwy_warning "overriding parameter: action '$action' becomes '$1'"
 		[ "$2" = to ] && shift
-		action="$2"
+		action="$2" action_is_chain=1
 		shift 2 || shift
 		;;
 	    reject)
@@ -722,10 +731,15 @@ _fwy_rule()
     # Initialize if not done already
     [ -d "${_FWY_TMP}/fw" ] || _fwy_initialize
 
+    # Create target chain
+    if [ -n "$action_is_chain" ] && ! _fwy_chain_exists "$_FWY_TABLE" "$action"; then
+	_fwy_create_chain "$_FWY_TABLE" "$action" || return 1
+    fi
+
     # Record the location of the rules
     if [ -n "${_FWY_LINENO}" ]; then
-	echo -e "#\n# source: ${FIREWALLY_CONFIG}:${_FWY_LINENO}\n# $_FWY_CURRENT_COMMAND" \
-	    >> "${_FWY_TMP}/fw/$_FWY_CURRENT_TABLE/$_FWY_CURRENT_CHAIN/$_FWY_RULES"
+	echo -e "#\n# source: ${FIREWALLY_CONFIG}:${_FWY_LINENO}\n# $_FWY_COMMAND" \
+	    >> "${_FWY_TMP}/fw/$_FWY_TABLE/$_FWY_CHAIN/r$_FWY_RULES"
     fi
 
     # Expand rules
@@ -772,6 +786,7 @@ _fwy_rule()
 				proto=icmp
 				dstport=any
 				icmptype="${aservice#*/}"
+				icmptype="${icmptype//[,;]/ }"
 				icmptype="${icmptype:-any}"
 				;;
 			    *)
@@ -869,17 +884,23 @@ _fwy_rule()
 							    local limit_arg="-m limit --limit $limit --limit-burst $limit_burst"
 							fi
 
-							local base_cmd="$_FWY_CURRENT_TABLE $_FWY_CURRENT_CHAIN \
+							local base_cmd="$_FWY_TABLE $_FWY_CHAIN \
 							    $iface_arg $oface_arg $src_arg $dst_arg $proto_arg \
 							    $icmptype_arg $srcport_arg $dstport_arg \
 							    $mac_arg $mark_arg $dscp_arg $tos_arg $state_arg \
 							    $match $limit_arg"
 
 							if [ -n "$log" ]; then
+							    # create logging rule
 							    _fwy_iptables $base_cmd $log_match -j "$log" $log_args || return 1
 							fi
-							_fwy_iptables $base_cmd -j "$action" $action_args || return 1
 
+							# create rule
+							if [ "$action" = REJECT -a "$aproto" = tcp -a -z "$action_args" ]; then
+							    _fwy_iptables $base_cmd -j REJECT --reject-with tcp-reset || return 1
+							else
+							    _fwy_iptables $base_cmd -j "$action" $action_args || return 1
+							fi
 						    done
 						done
 					    done
@@ -904,7 +925,7 @@ _fwy_rule()
 # version n
 version()
 {
-    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    local _FWY_COMMAND="$FUNCNAME $@"
 
     [ "$1" != "$_FWY_CONFIG_VERSION" ] && \
 	_fwy_error "configuration version '$1' not supported" && return 1
@@ -913,9 +934,8 @@ version()
 # iptables args..
 iptables()
 {
-    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
-    local table="$_FWY_CURRENT_TABLE" chain="$_FWY_CURRENT_CHAIN"
-    local arg
+    local _FWY_COMMAND="$FUNCNAME $@" _FWY_RULES=$_FWY_RULES_USER
+    local table="$_FWY_TABLE" chain="$_FWY_CHAIN"
 
     if [ "$1" = "-t" ]; then
 	_fwy_valid_name table "$2" 30 || return 1
@@ -934,8 +954,8 @@ iptables()
 # chain [table] name
 chain()
 {
-    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
-    local table="$_FWY_CURRENT_TABLE" chain
+    local _FWY_COMMAND="$FUNCNAME $@"
+    local table="$_FWY_TABLE" chain
 
     if [ -n "$2" ]; then
 	_fwy_valid_name table "$1" 30 || return 1
@@ -943,7 +963,7 @@ chain()
 	shift
     fi
     chain="$1"
-    _fwy_valid_name chain "$chain" 30 || return 1
+    _fwy_valid_name chain "$chain" 20 || return 1
 
     # Initialize if not done already
     [ -d "${_FWY_TMP}/fw" ] || _fwy_initialize
@@ -955,21 +975,20 @@ chain()
 	_fwy_create_chain "$table" "$chain"
     fi
 
-    _FWY_CURRENT_TABLE="$table"
-    _FWY_CURRENT_CHAIN="$chain"
+    _FWY_TABLE="$table"
+    _FWY_CHAIN="$chain"
 }
 
 # policy args...
 policy()
 {
-    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
-    local _FWY_RULES=policy
+    local _FWY_COMMAND="$FUNCNAME $@" _FWY_RULES=$_FWY_RULES_POLICY
     local args="$@"
 
     # Initialize if not done already
     [ -d "${_FWY_TMP}/fw" ] || _fwy_initialize
 
-    : > "${_FWY_TMP}/fw/${_FWY_CURRENT_TABLE}/${_FWY_CURRENT_CHAIN}/policy"
+    : > "${_FWY_TMP}/fw/${_FWY_TABLE}/${_FWY_CHAIN}/r${_FWY_RULES}"
     if [ -n "$args" -a "$args" != return ]; then
         _fwy_rule "$@"
     fi
@@ -978,133 +997,135 @@ policy()
 # rule args...
 rule()
 {
-    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    local _FWY_COMMAND="$FUNCNAME $@" _FWY_RULES=$_FWY_RULES_USER
     _fwy_rule "$@"
 }
 
 log()
 {
-    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    local _FWY_COMMAND="$FUNCNAME $@" _FWY_RULES=$_FWY_RULES_USER
     _fwy_rule $FUNCNAME "$@"
 }
 
 loglimit()
 {
-    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    local _FWY_COMMAND="$FUNCNAME $@" _FWY_RULES=$_FWY_RULES_USER
     _fwy_rule $FUNCNAME "$@"
 }
 
 accept()
 {
-    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    local _FWY_COMMAND="$FUNCNAME $@" _FWY_RULES=$_FWY_RULES_USER
     _fwy_rule $FUNCNAME "$@"
 }
 
 drop()
 {
-    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    local _FWY_COMMAND="$FUNCNAME $@" _FWY_RULES=$_FWY_RULES_USER
     _fwy_rule $FUNCNAME "$@"
 }
 
 ret()
 {
-    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    local _FWY_COMMAND="$FUNCNAME $@" _FWY_RULES=$_FWY_RULES_USER
     _fwy_rule return "$@"
 }
 
 jump()
 {
-    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    local _FWY_COMMAND="$FUNCNAME $@" _FWY_RULES=$_FWY_RULES_USER
     _fwy_rule $FUNCNAME "$@"
 }
 
 goto()
 {
-    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    local _FWY_COMMAND="$FUNCNAME $@" _FWY_RULES=$_FWY_RULES_USER
     _fwy_rule $FUNCNAME "$@"
 }
 
 reject()
 {
-    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    local _FWY_COMMAND="$FUNCNAME $@" _FWY_RULES=$_FWY_RULES_USER
     _fwy_rule $FUNCNAME "$@"
 }
 
 snat()
 {
-    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    local _FWY_COMMAND="$FUNCNAME $@" _FWY_RULES=$_FWY_RULES_USER
     _fwy_rule $FUNCNAME "$@"
 }
 
 dnat()
 {
-    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    local _FWY_COMMAND="$FUNCNAME $@" _FWY_RULES=$_FWY_RULES_USER
     _fwy_rule $FUNCNAME "$@"
 }
 
 masq()
 {
-    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    local _FWY_COMMAND="$FUNCNAME $@" _FWY_RULES=$_FWY_RULES_USER
     _fwy_rule $FUNCNAME "$@"
 }
 
 masquerade()
 {
-    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    local _FWY_COMMAND="$FUNCNAME $@" _FWY_RULES=$_FWY_RULES_USER
     _fwy_rule $FUNCNAME "$@"
 }
 
 redirect()
 {
-    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    local _FWY_COMMAND="$FUNCNAME $@" _FWY_RULES=$_FWY_RULES_USER
     _fwy_rule $FUNCNAME "$@"
 }
 
 setmark()
 {
-    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    local _FWY_COMMAND="$FUNCNAME $@" _FWY_RULES=$_FWY_RULES_USER
     _fwy_rule $FUNCNAME "$@"
 }
 
 settos()
 {
-    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    local _FWY_COMMAND="$FUNCNAME $@" _FWY_RULES=$_FWY_RULES_USER
     _fwy_rule $FUNCNAME "$@"
 }
 
 setdscp()
 {
-    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    local _FWY_COMMAND="$FUNCNAME $@" _FWY_RULES=$_FWY_RULES_USER
     _fwy_rule $FUNCNAME "$@"
 }
 
 imq()
 {
-    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    local _FWY_COMMAND="$FUNCNAME $@" _FWY_RULES=$_FWY_RULES_USER
     _fwy_rule $FUNCNAME "$@"
 }
 
 target()
 {
-    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    local _FWY_COMMAND="$FUNCNAME $@" _FWY_RULES=$_FWY_RULES_USER
     _fwy_rule $FUNCNAME "$@"
 }
 
+# service args...
+# Shorthand for accept service args...
 service()
 {
-    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    local _FWY_COMMAND="$FUNCNAME $@" _FWY_RULES=$_FWY_RULES_USER
     _fwy_rule accept $FUNCNAME "$@"
 }
 
+# protection args...
 protection()
 {
-    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
-    local _FWY_RULES=rules
+    local _FWY_COMMAND="$FUNCNAME $@" _FWY_RULES=$_FWY_RULES_USER
     local type="$1" rate="$2" burst="$3"
     local protections prot chain
 
     : "${burst:=20}"
-    [ "$_FWY_CURRENT_TABLE" != filter ] && _fwy_error "protections only work in table 'filter'" && return 1
+    [ "$_FWY_TABLE" != filter ] && _fwy_error "protections only work in table 'filter'" && return 1
 
     # Initialize if not done already
     [ -d "${_FWY_TMP}/fw" ] || _fwy_initialize
@@ -1115,7 +1136,7 @@ protection()
 	    none | '')
 		;;
 	    strong | full | all)
-		protections="$protections nosyn synflood bad icmpflood"
+		protections="$protections nosyn sfld bad inv ifld badi"
 		;;
 	    new-tcp-no-syn | new-tcp-w/o-syn)
 		protections="$protections nosyn"
@@ -1123,11 +1144,17 @@ protection()
 	    malformed | bad)
 		protections="$protections bad"
 		;;
+	    invalid)
+		[ "${FIREWALLY_STATEFUL:-0}" != 0 ] && protections="$protections inv"
+		;;
+	    bad-icmp | unsafe-icmp)
+		protections="$protections badi"
+		;;
 	    syn-floods)
-		protections="$protections synflood"
+		protections="$protections sfld"
 		;;
 	    icmp-floods)
-		protections="$protections icmpflood"
+		protections="$protections ifld"
 		;;
 	    unroutable-src | unroutable-source)
 		protections="$protections unrt_s"
@@ -1144,64 +1171,262 @@ protection()
 
     # Record the location of the rules
     if [ -n "${_FWY_LINENO}" ]; then
-	echo -e "#\n# source: ${FIREWALLY_CONFIG}:${_FWY_LINENO}\n# $_FWY_CURRENT_COMMAND" \
-	    >> "${_FWY_TMP}/fw/$_FWY_CURRENT_TABLE/$_FWY_CURRENT_CHAIN/$_FWY_RULES"
+	echo -e "#\n# source: ${FIREWALLY_CONFIG}:${_FWY_LINENO}\n# $_FWY_COMMAND" \
+	    >> "${_FWY_TMP}/fw/$_FWY_TABLE/$_FWY_CHAIN/r$_FWY_RULES"
     fi
 
     # Process protections
     for prot in $protections; do
-	chain="${_FWY_CURRENT_CHAIN}_${prot}"
-	eval ": \${FIREWALLY_DEFAULT_${_FWY_CURRENT_TABLE}_${chain}_POLICY:=drop loglimit}"
+	chain="${_FWY_CHAIN}_${prot}"
+	eval ": \${FIREWALLY_${_FWY_TABLE}_${chain}_POLICY:=drop loglimit}"
 	case "$prot" in
 	    nosyn)
-		if ! _fwy_chain_exists "$_FWY_CURRENT_TABLE" "$chain"; then
-		    _fwy_create_chain "$_FWY_CURRENT_TABLE" "$chain" || return 1
+		if ! _fwy_chain_exists "$_FWY_TABLE" "$chain"; then
+		    _fwy_create_chain "$_FWY_TABLE" "$chain" || return 1
 		fi
-		_fwy_iptables "$_FWY_CURRENT_TABLE" "$_FWY_CURRENT_CHAIN" \
+		_fwy_iptables "$_FWY_TABLE" "$_FWY_CHAIN" \
 		    -p tcp ! --syn -m state --state NEW -j "$chain" || return 1
 		;;
 	    bad)
-		if ! _fwy_chain_exists "$_FWY_CURRENT_TABLE" "$chain"; then
-		    _fwy_create_chain "$_FWY_CURRENT_TABLE" "$chain" || return 1
+		if ! _fwy_chain_exists "$_FWY_TABLE" "$chain"; then
+		    _fwy_create_chain "$_FWY_TABLE" "$chain" || return 1
 		fi
 		local flags
 		for flags in ALL:ALL ALL:NONE SYN,RST:SYN,RST ALL:SYN,RST,ACK,FIN,URG ALL:FIN,URG,PSH; do
-		    _fwy_iptables "$_FWY_CURRENT_TABLE" "$_FWY_CURRENT_CHAIN" \
+		    _fwy_iptables "$_FWY_TABLE" "$_FWY_CHAIN" \
 			-p tcp --tcp-flags "${flags%%:*}" "${flags##*:}" -j "$chain" || return 1
 		done
 		;;
-	    synflood)
-		if ! _fwy_chain_exists "$_FWY_CURRENT_TABLE" "$chain"; then
-		    _fwy_create_chain "$_FWY_CURRENT_TABLE" "$chain" || return 1
-		    _fwy_iptables "$_FWY_CURRENT_TABLE" "$chain" \
-			-m limit --limit "${rate:-$FIREWALLY_DEFAULT_SYNFLOOD_LIMIT}" \
+	    inv)
+		if ! _fwy_chain_exists "$_FWY_TABLE" "$chain"; then
+		    _fwy_create_chain "$_FWY_TABLE" "$chain" || return 1
+		fi
+		_fwy_iptables "$_FWY_TABLE" "$_FWY_CHAIN" \
+		    -m state --state INVALID -j "$chain" || return 1
+		;;
+	    badi)
+		if ! _fwy_chain_exists "$_FWY_TABLE" "$chain"; then
+		    _fwy_create_chain "$_FWY_TABLE" "$chain" || return 1
+		fi
+		local t
+		for t in ${UNSAFE_ICMP//,/ }; do
+		    _fwy_iptables "$_FWY_TABLE" "$_FWY_CHAIN" \
+			-p icmp --icmp-type "$t" -j "$chain" || return 1
+		done
+		;;
+	    sfld)
+		if ! _fwy_chain_exists "$_FWY_TABLE" "$chain"; then
+		    _fwy_create_chain "$_FWY_TABLE" "$chain" || return 1
+		    _fwy_iptables "$_FWY_TABLE" "$chain" \
+			-m limit --limit "${rate:-$FIREWALLY_SYNFLOOD_LIMIT}" \
 			--limit-burst "$burst" -j RETURN || return 1
 		fi
-		_fwy_iptables "$_FWY_CURRENT_TABLE" "$_FWY_CURRENT_CHAIN" \
+		_fwy_iptables "$_FWY_TABLE" "$_FWY_CHAIN" \
 		    -p tcp --syn -j "$chain" || return 1
 		;;
-	    icmpflood)
-		if ! _fwy_chain_exists "$_FWY_CURRENT_TABLE" "$chain"; then
-		    _fwy_create_chain "$_FWY_CURRENT_TABLE" "$chain" || return 1
-		    _fwy_iptables "$_FWY_CURRENT_TABLE" "$chain" \
-			-m limit --limit "${rate:-$FIREWALLY_DEFAULT_ICMPFLOOD_LIMIT}" \
+	    ifld)
+		if ! _fwy_chain_exists "$_FWY_TABLE" "$chain"; then
+		    _fwy_create_chain "$_FWY_TABLE" "$chain" || return 1
+		    _fwy_iptables "$_FWY_TABLE" "$chain" \
+			-m limit --limit "${rate:-$FIREWALLY_ICMPFLOOD_LIMIT}" \
 			--limit-burst "$burst" -j RETURN || return 1
 		fi
-		_fwy_iptables "$_FWY_CURRENT_TABLE" "$_FWY_CURRENT_CHAIN" \
+		_fwy_iptables "$_FWY_TABLE" "$_FWY_CHAIN" \
 		    -p icmp -j "$chain" || return 1
 		;;
 	    unrt_s | unrt_d)
-		if ! _fwy_chain_exists "$_FWY_CURRENT_TABLE" unroutable; then
-		    _fwy_create_chain "$_FWY_CURRENT_TABLE" unroutable || return 1
+		if ! _fwy_chain_exists "$_FWY_TABLE" unroutable; then
+		    _fwy_create_chain "$_FWY_TABLE" unroutable || return 1
 		fi
 		local ip
 		for ip in ${UNROUTABLE_IPS//[,;]/ }; do
-		    _fwy_iptables "$_FWY_CURRENT_TABLE" "$_FWY_CURRENT_CHAIN" \
+		    _fwy_iptables "$_FWY_TABLE" "$_FWY_CHAIN" \
 			"-${prot#unrt_}" "$ip" -j unroutable || return 1
 		done
 		;;
 	esac
     done
+
+    return 0
+}
+
+# zone name spec...
+zone()
+{
+    local _FWY_COMMAND="$FUNCNAME $@"
+    local _FWY_TABLE=filter _FWY_RULES=$_FWY_RULES_ZONE_SEL
+    local zone="$1" z2 defs def iface addr var
+
+    # Validate arguments
+    shift
+    case "$zone" in
+	fw | any)
+	    _fwy_error "zone '$zone' is a built-in zone" && return 1
+	    ;;
+	*)
+	    _fwy_valid_name zone "$zone" 10 || return 1
+	    ;;
+    esac
+    [ -n "$_FWY_ZONES_INIT" ] && _fwy_error "cannot specify more zones" && return 1
+    var="_FWY_ZONE_${zone}"
+    case " $_FWY_ZONES " in
+	*" $zone "*)
+	    _fwy_warning "overriding zone: '$zone' becomes '$@'"
+	    ;;
+    esac
+
+    # Initialize if not done already
+    [ -d "${_FWY_TMP}/fw" ] || _fwy_initialize
+
+    # Parse spec
+    _fwy_verbose "Creating zone '$zone'"
+    if [ $# = 0 ]; then
+	defs="any:any"
+    else
+	for def; do
+	    case "$def" in
+		*:*)
+		    iface="${def%%:*}" addr="${def#*:}"
+		    ;;
+		*.*)
+		    iface= addr="$def"
+		    ;;
+		*)
+		    iface="$def" addr=
+		    ;;
+	    esac
+	    defs="$defs ${iface:-any}:${addr:-any}"
+	done
+    fi
+
+    # Remember spec
+    eval "${var}=\"\$defs\""
+
+    # Add rules to standard chains
+    local _FWY_CHAIN
+    eval ": \${FIREWALLY_filter_${zone}_to_fw_POLICY:=\$FIREWALLY_filter_INPUT_POLICY}"
+    eval ": \${FIREWALLY_filter_fw_to_${zone}_POLICY:=\$FIREWALLY_filter_OUTPUT_POLICY}"
+    eval ": \${FIREWALLY_filter_fwd_${zone}_POLICY:=\"drop loglimit\"}"
+    for def in $defs; do
+	iface="${def%%:*}" addr="${def#*:}"
+	_FWY_CHAIN=INPUT
+	_fwy_rule goto "${zone}_to_fw" iface "$iface" saddr "$addr" || return 1
+	_FWY_CHAIN=OUTPUT
+	_fwy_rule goto "fw_to_${zone}" oface "$iface" daddr "$addr" || return 1
+	_FWY_CHAIN=FORWARD
+	_fwy_rule goto "fwd_${zone}"   iface "$iface" saddr "$addr" || return 1
+    done
+
+    # Link the new zone to the old ones
+    for z2 in $_FWY_ZONES; do
+	_FWY_CHAIN="fwd_${z2}"
+	eval ": \${FIREWALLY_filter_${z2}_to_${zone}_POLICY:=\"drop loglimit\"}"
+	for def in $defs; do
+	    _fwy_rule goto "${z2}_to_${zone}" oface "${def%%:*}" daddr "${def#*:}" || return 1
+	done
+    done
+
+    # Link old zones from the new one
+    _FWY_CHAIN="fwd_${zone}"
+    for z2 in $_FWY_ZONES $zone; do
+	var="_FWY_ZONE_${z2}"
+	eval ": \${FIREWALLY_filter_${zone}_to_${z2}_POLICY:=\"drop loglimit\"}"
+	for def in ${!var}; do
+	    _fwy_rule goto "${zone}_to_${z2}" oface "${def%%:*}" daddr "${def#*:}" || return 1
+	done
+    done
+
+    _FWY_ZONES="$_FWY_ZONES $zone"
+    return 0
+}
+
+# from zone [to] zone
+from()
+{
+    local _FWY_COMMAND="$FUNCNAME $@"
+    local z1="$1" z2 chain z
+
+    # Parse and validate arguments
+    shift
+    [ "$1" = to ] && shift
+    z2="$1"
+    case " $_FWY_ZONES " in
+	*" $z1 "*) ;;
+	*)
+	    case "$z1" in
+	    	fw | any) ;;
+		*) _fwy_error "unknown 'from' zone: '$z1'" && return 1;;
+	    esac
+	    ;;
+    esac
+    case " $_FWY_ZONES " in
+	*" $z2 "*) ;;
+	*)
+	    case "$z2" in
+	    	fw | any) ;;
+		*) _fwy_error "unknown 'to' zone: '$z2'" && return 1;;
+	    esac
+	    ;;
+    esac
+
+    _fwy_verbose "Processing rules from '$z1' to '$z2'"
+    chain="${z1}_to_${z2}"
+    _FWY_TABLE=filter
+    _FWY_CHAIN="$chain"
+    case "$chain" in
+	any_to_* | *_to_any)
+	    _FWY_ZONES_INIT=1
+	    eval "FIREWALLY_filter_${chain}_POLICY="
+	    ;;
+	*)
+	    eval ": \${FIREWALLY_filter_${chain}_POLICY:=drop loglimit}"
+	    ;;
+    esac
+    # Handle special cases
+    case "$chain" in
+	fw_to_fw)
+	    _fwy_error "cannot filter from '$z1' to '$z2'"
+	    return 1
+	    ;;
+	any_to_any)
+	    if ! _fwy_chain_exists filter any_to_any; then
+		local _FWY_RULES=$_FWY_RULES_ZONE_ANY1
+		_fwy_create_chain filter any_to_any || return 1
+		for chain in INPUT FORWARD OUTPUT; do
+		    _fwy_iptables filter $chain -j any_to_any || return 1
+		done
+	    fi
+	    ;;
+	any_to_fw | fw_to_any)
+	    if ! _fwy_chain_exists filter $chain; then
+		local _FWY_RULES=$_FWY_RULES_ZONE_ANY2
+		_fwy_create_chain filter $chain || return 1
+		if [ "$chain" = any_to_fw ]; then
+		    _fwy_iptables filter INPUT -j $chain || return 1
+		else
+		    _fwy_iptables filter OUTPUT -j $chain || return 1
+		fi
+	    fi
+	    ;;
+	*_to_any)
+	    if ! _fwy_chain_exists filter $chain; then
+		local _FWY_RULES=$_FWY_RULES_ZONE_ANY2
+		_fwy_create_chain filter $chain || return 1
+		_fwy_iptables filter "${z1}_to_fw" -j $chain || return 1
+		_fwy_iptables filter "fwd_${z1}" -j $chain || return 1
+	    fi
+	    ;;
+	any_to_*)
+	    if ! _fwy_chain_exists filter $chain; then
+		local _FWY_RULES=$_FWY_RULES_ZONE_ANY2
+		_fwy_create_chain filter $chain || return 1
+		_fwy_iptables filter "fw_to_${z2}" -j $chain || return 1
+		for z in $_FWY_ZONES; do
+		    _fwy_iptables filter "${z}_to_${z2}" -j $chain || return 1
+		done
+	    fi
+	    ;;
+    esac
 
     return 0
 }
@@ -1219,6 +1444,14 @@ _fwy_cleanup()
     if [ -n "$_FWY_TMP" -a "$_FWY_TMP" != "/" ]; then
 	${_FWY_RM_CMD} -rf "${_FWY_TMP}"
     fi
+}
+
+# _fwy_interrupt
+# Trap handler: cleanup
+_fwy_interrupt()
+{
+    _FWY_MODE= _FWY_USING_IPTABLES=
+    _fwy_error "Interrupted"
 }
 
 # _fwy_usage
@@ -1252,7 +1485,7 @@ EOF
 }
 
 # Process arguments
-while [ -n "$1" ]; do
+while [ "$#" -gt 0 ]; do
     case "$1" in
 	start | run | restart | reload)
 	    _FWY_MODE=start
@@ -1308,18 +1541,16 @@ fi
 # Locate required commands
 _fwy_find_cmd _FWY_AWK_CMD gawk
 _fwy_find_cmd _FWY_CAT_CMD cat
+_fwy_find_cmd _FWY_IPTABLES_CMD iptables
+_fwy_find_cmd _FWY_IPTABLES_RESTORE_CMD iptables-restore
+_fwy_find_cmd _FWY_IPTABLES_SAVE_CMD iptables-save
 _fwy_find_cmd _FWY_LESS_CMD less
+_fwy_find_cmd _FWY_LSMOD_CMD lsmod
 _fwy_find_cmd _FWY_MKDIR_CMD mkdir
 _fwy_find_cmd _FWY_MKTEMP_CMD mktemp
+_fwy_find_cmd _FWY_MODPROBE_CMD modprobe
 _fwy_find_cmd _FWY_RM_CMD rm
 _fwy_find_cmd _FWY_TOUCH_CMD touch
-if [ "$_FWY_MODE" != explain -a "$_FWY_MODE" != debug ]; then
-    _fwy_find_cmd _FWY_IPTABLES_CMD iptables
-    _fwy_find_cmd _FWY_IPTABLES_RESTORE_CMD iptables-restore
-    _fwy_find_cmd _FWY_IPTABLES_SAVE_CMD iptables-save
-    _fwy_find_cmd _FWY_LSMOD_CMD lsmod
-    _fwy_find_cmd _FWY_MODPROBE_CMD modprobe
-fi
 
 # Easy commands
 case "$_FWY_MODE" in
@@ -1365,7 +1596,8 @@ esac
 
 # Initialize working environment
 _FWY_TMP=`${_FWY_MKTEMP_CMD} -d -t fwy.XXXXXX` || _fwy_fatal "cannot create temporary directory"
-trap _fwy_cleanup EXIT INT
+trap _fwy_cleanup EXIT
+trap _fwy_interrupt INT TERM
 _FWY_OLD_FW="${_FWY_TMP}/old.fw"
 _FWY_NEW_FW="${_FWY_TMP}/new.fw"
 
@@ -1384,7 +1616,7 @@ if [ "$_FWY_MODE" = explain ]; then
     echo "FireWally -- Interactive Mode"
 
     while :; do
-	read -p "FireWally [$_FWY_CURRENT_TABLE:$_FWY_CURRENT_CHAIN]> " -e -r
+	read -p "FireWally [$_FWY_TABLE:$_FWY_CHAIN]> " -e -r
 	[ -z "$REPLY" ] && continue
 	set -- ${REPLY}
 	case "$1" in
@@ -1417,12 +1649,13 @@ EOF
 		exit 0
 	        ;;
 	    *)
+		[ "$1" = "in" ] && set -- zone net eth0\; from net to fw
 		eval "$@"
 		if [ $? -gt 0 ]; then
 		    printf "\n# FAILED\n"
 		else
 		    case "$1" in
-			chain | *=*)
+			chain | zone | from | *=*)
 			    echo >> "${_FWY_NEW_CONF}"
 			    ;;
 			*)
@@ -1461,8 +1694,9 @@ _fwy_verbose "Preprocessing source"
 [ -f "$FIREWALLY_CONFIG" ] || _fwy_fatal "configuration file '$FIREWALLY_CONFIG' does not exist"
 [ -r "$FIREWALLY_CONFIG" ] || _fwy_fatal "cannot read configuration file '$FIREWALLY_CONFIG'"
 
-${_FWY_AWK_CMD} "/^[[:space:]]*(accept|chain|dnat|drop|goto|imq|iptables|jump|log|loglimit|masq|masquerade\
-|policy|protection|redirect|reject|ret|rule|service|setdscp|setmark|settos|snat|target|version)\\>/ \
+${_FWY_AWK_CMD} "/^[[:space:]]*(accept|chain|dnat|drop|from|goto|imq|iptables|jump|log|loglimit\
+|masq|masquerade|policy|protection|redirect|reject|ret|rule|service|setdscp|setmark|settos|snat\
+|target|version|zone)\\>/ \
 { printf \"_FWY_LINENO=%d; \", NR }
 { print }" "$FIREWALLY_CONFIG" > "${_FWY_TMP}/source.config" || \
     _fwy_fatal "cannot convert source file"
@@ -1477,6 +1711,7 @@ enable exit
 
 # Configuration OK, generate rules
 _fwy_verbose "Generating rules"
+echo -e "# iptables-save file generated by FireWally $FIREWALLY_VERSION\n#" >"${_FWY_NEW_FW}"
 for tabledir in "${_FWY_TMP}/fw"/*; do
     table="${tabledir##*/}"
     echo "*$table"
@@ -1484,9 +1719,9 @@ for tabledir in "${_FWY_TMP}/fw"/*; do
 	chain="${chaindir##*/}"
 	echo ":$chain -"
     done
-    ${_FWY_CAT_CMD} "$tabledir"/*/{rules,policy} || _fwy_fatal "cannot create rules"
+    ${_FWY_CAT_CMD} "$tabledir"/*/r* || _fwy_fatal "cannot create rules"
     echo "COMMIT"
-done > "${_FWY_NEW_FW}" || _fwy_fatal "cannot create rules"
+done >> "${_FWY_NEW_FW}" || _fwy_fatal "cannot create rules"
 
 
 if [ "$_FWY_MODE" = debug ]; then
