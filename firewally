@@ -1,0 +1,1593 @@
+#!/bin/bash
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+# File:	       firewally
+# Description: FireWally: Eazy, Advanced Zone-Based Firewall
+#
+# Copyright:   Copyright (C) 2004 yLabs
+# Part of:     firewally
+# Author:      Octavian Cerna <tavy@ylabs.com>
+# Id:	       $Id$
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+# {{{ Bash version check
+
+case "$BASH_VERSION" in
+    1.*)
+	echo >&2 "firewally: FATAL: This program requires GNU bash 2.x"
+	exit 1
+	;;
+esac
+
+# }}}
+
+# {{{ Global Variables
+
+# Version
+FIREWALLY_VERSION='0.0'
+FIREWALLY_REVISION='$Id$'
+_FWY_CONFIG_VERSION=1
+
+# Basic options
+: "${FIREWALLY_CONFIG:=/etc/firewall/firewally.conf}"
+: "${FIREWALLY_USE_MPORT:=1}"
+: "${FIREWALLY_USE_IPTABLES_RESTORE:=1}"
+FIREWALLY_STATEFUL=1
+FIREWALLY_ROUTING=1
+FIREWALLY_MODULES="all"
+
+# Default policies
+FIREWALLY_DEFAULT_filter_INPUT_POLICY="drop log"
+FIREWALLY_DEFAULT_filter_OUTPUT_POLICY="accept"
+FIREWALLY_DEFAULT_filter_FORWARD_POLICY="drop log"
+FIREWALLY_DEFAULT_filter_unroutable_POLICY="drop log"
+
+# Logging options
+FIREWALLY_LOG_TEXT='FW: ${chain}${action:+ $action}${text:+ $text}: '
+FIREWALLY_LOG_LEVEL="warning"
+FIREWALLY_LOG_FREQUENCY="1/second"
+FIREWALLY_LOG_BURST="2"
+FIREWALLY_LOG_OPTIONS=""
+
+# Utils
+# IANA Reserved IPv4 address space
+RESERVED_IPS="0.0.0.0/7 2.0.0.0/8 5.0.0.0/8 7.0.0.0/8 23.0.0.0/8 27.0.0.0/8 31.0.0.0/8 36.0.0.0/7 39.0.0.0/8 41.0.0.0/8 42.0.0.0/8 49.0.0.0/8 50.0.0.0/8 58.0.0.0/7 71.0.0.0/8 72.0.0.0/5 85.0.0.0/8 86.0.0.0/7 88.0.0.0/5 96.0.0.0/3 173.0.0.0/8 174.0.0.0/7 176.0.0.0/5 184.0.0.0/6 189.0.0.0/8 190.0.0.0/8 192.0.2.0/24 197.0.0.0/8 198.18.0.0/15 223.0.0.0/8 240.0.0.0/4"
+# Private IPv4 address space
+PRIVATE_IPS="10.0.0.0/8 172.16.0.0/12 169.254.0.0/16 192.168.0.0/16 192.88.99.0/24"
+# The multicast address space
+MULTICAST_IPS="224.0.0.0/4"
+# All the Internet unroutable addresses
+UNROUTABLE_IPS="${RESERVED_IPS} ${PRIVATE_IPS}"
+
+# Internal state
+_FWY_MODE=
+_FWY_VERBOSE=
+_FWY_TMP=
+_FWY_LINENO=
+_FWY_CURRENT_CHAIN=INPUT
+_FWY_CURRENT_TABLE=filter
+_FWY_RULES=rules
+_FWY_USING_IPTABLES=
+
+# }}}
+
+# {{{ Services
+
+# Syntax: proto/[port[:port]][,...] ...
+
+service_ah="ah/"
+service_allirc="tcp/6660:6670,7000:7010"
+service_allmail="tcp/smtp,465,587,pop3,imap,pop3s,imaps"
+service_allpop="tcp/pop3,imap,pop3s,imaps"
+service_allsmtp="tcp/smtp,465,587"
+service_allweb="tcp/http,https"
+service_aol="tcp/5190:5193"
+service_apcupsd="tcp/6544"
+service_apcupsdnis="tcp/3551"
+service_aptproxy="tcp/9999"
+service_bootps="udp/67"
+service_coda="tcp/369:370,2430:2433 udp/369:370,2430:2433"
+service_cstrike="$service_halflife"
+service_cups="tcp/631"
+service_cvspserver="tcp/2401"
+service_dcpp="tcp/1412 udp/1412"
+service_dhcps="udp/67"
+service_directplay="tcp/47624,2300:2400 udp/6073,2300:2400"
+service_dns="udp/domain tcp/domain"
+service_edonkey="tcp/4661:4662 udp/4672,4665"
+service_emule="$service_edonkey"
+service_esp="esp/"
+service_gre="gre/"
+service_halflife="udp/27010:27020"
+service_heartbeat="udp/690:699"
+service_heretic2="udp/28910"
+service_hexen2="udp/26900"
+service_icmp="icmp/"
+service_icp="udp/3130"
+service_icq="tcp/5190:5193 udp/4000"
+service_ident="tcp/auth"
+service_igmp="igmp/"
+service_ipencap="4/"
+service_ipip="$service_ipencap"
+service_ipsec="esp/ ah/ udp/500"
+service_irc="tcp/6666:6669"
+service_isakmp="udp/500"
+service_isis="isis/"
+service_jabber="tcp/5222:5223"
+service_jabberd="tcp/5222:5223,5269"
+service_lpd="tcp/printer"
+service_msn="tcp/6891"
+service_netbios_dgm="udp/netbios-dgm"
+service_netbios_ns="udp/netbios-ns"
+service_nfs="tcp/2049 udp/2049"
+service_ntp="udp/ntp"
+service_openmosix="tcp/723,4660 udp/5428,32768"
+service_oracle="tcp/1521,1525"
+service_ospf="ospf/"
+service_pcanywhere="tcp/5631 udp/5632"
+service_pim="pim/"
+service_ping="icmp/echo-request"
+service_portmap="udp/sunrpc tcp/sunrpc"
+service_postgres="tcp/5432"
+service_pptp="tcp/1723 gre/"
+service_privoxy="tcp/8118"
+service_quake2="udp/27910"
+service_quake3="udp/27960"
+service_quake="tcp/26000 udp/26000"
+service_radius="udp/radius,radius-acct"
+service_radiusold="udp/1645:1646"
+service_realaudio="tcp/7060,554 udp/554,8554"
+service_rip="udp/route"
+service_rsvp="rsvp/"
+service_samba="tcp/netbios-ssn,445 udp/netbios-ns,netbios-dgm"
+service_skip="skip/"
+service_smtps="tcp/465"
+service_snmp="udp/snmp"
+service_snmptrap="udp/snmptrap"
+service_socks="tcp/socks udp/socks"
+service_squid="tcp/3128"
+service_ssdp="udp/1900"
+service_submission="tcp/587"
+service_sunrpc="$service_portmap"
+service_syslog="udp/syslog"
+service_talk="udp/517:518"
+service_tftp="udp/tftp"
+service_time="tcp/time udp/time"
+service_tinc="tcp/655 udp/655"
+service_traceroute="udp/33434:33524"
+service_upnp="tcp/5000 udp/1900,5000"
+service_vmware="tcp/902"
+service_vmwareauth="tcp/903"
+service_vmwareweb="tcp/8222"
+service_vnc="tcp/5900:5903"
+service_vnc_http="tcp/5800:5803"
+service_vrrp="vrrp/"
+service_webmin="tcp/10000"
+service_winterm="tcp/3389"
+service_x11="tcp/6000:6009"
+service_xdmcp="udp/177"
+service_xfs="tcp/7100"
+service_ymsgr="tcp/5050,5000:5001 udp/5000:5001"
+
+# }}}
+
+# {{{ Utils
+
+# _fwy_find_cmd var command
+# Find a program in $PATH. Set var to the full path of command.
+_fwy_find_cmd()
+{
+    local -a cmd=(`type -a -p $2`)
+    [ $? -ne 0 -o ! -x "${cmd[0]}" ] && _fwy_fatal "Program '$2' not found in system path ($PATH)"
+    eval "$1=\"\${cmd[0]}\""
+}
+
+# _fwy_verbose args...
+_fwy_verbose()
+{
+    if [ -n "$_FWY_VERBOSE" ]; then
+	echo " $@"
+    elif [ "$_FWY_MODE" = explain ]; then
+	echo "# $@"
+    fi
+}
+
+# _fwy_warning args...
+_fwy_warning()
+{
+    echo >&2
+    echo >&2 "firewally: Warning: $@"
+    [ -n "$_FWY_CURRENT_COMMAND" ] && echo >&2 "        in command: ${_FWY_CURRENT_COMMAND}"
+    [ -n "$_FWY_LINENO" ] && echo >&2 "            source: ${FIREWALLY_CONFIG}:${_FWY_LINENO}"
+    return 0
+}
+
+# _fwy_error args...
+_fwy_error()
+{
+    echo >&2
+    echo >&2 "firewally:   ERROR: $@"
+    [ -n "$_FWY_CURRENT_COMMAND" ] && echo >&2 "        in command: ${_FWY_CURRENT_COMMAND}"
+    [ -n "$_FWY_LINENO" ] && echo >&2 "            source: ${FIREWALLY_CONFIG}:${_FWY_LINENO}"
+    if [ "$_FWY_MODE" != explain -a -z "$_FWY_USING_IPTABLES" ]; then
+	enable exit
+	exit 1
+    fi
+    return 0
+}
+
+# _fwy_fatal args...
+_fwy_fatal()
+{
+    echo >&2
+    echo >&2 "firewally:   FATAL: $@"
+    [ -n "$_FWY_CURRENT_COMMAND" ] && echo >&2 "        in command: ${_FWY_CURRENT_COMMAND}"
+    [ -n "$_FWY_LINENO" ] && echo >&2 "            source: ${FIREWALLY_CONFIG}:${_FWY_LINENO}"
+    enable exit
+    exit 2
+}
+
+# _fwy_iptables_save args...
+# Fix some iptables-save bugs
+_fwy_iptables_save()
+{
+    ${_FWY_IPTABLES_SAVE_CMD} "$@" | \
+	${_FWY_AWK_CMD} '{ print gensub(/(--([ugps]id|cmd)-owner) !/, "! \\1 ", "g") }'
+    return ${PIPESTATUS[0]}
+}
+
+# _fwy_valid_name object name maxlen
+_fwy_valid_name()
+{
+    local object="$1" name="$2" maxlen="$3"
+
+    if [ "${#name}" -gt "$maxlen" ]; then
+	_fwy_error "$object name too long: '$name'"
+	return 1
+    fi
+    if ! expr " $name" : ' [a-zA-Z0-9_-]\+' >/dev/null; then
+	_fwy_error "invalid $object name: '$name'"
+	return 1
+    fi
+    return 0
+}
+
+# }}}
+
+# {{{ Chain Handling
+
+# _fwy_chain_builtin chain
+# Return true if chain is a builtin chain
+_fwy_chain_builtin()
+{
+    case "$1" in
+	INPUT | FORWARD | OUTPUT | PREROUTING | POSTROUTING)
+	    return 0
+	    ;;
+    esac
+    return 1
+}
+
+# _fwy_chain_exists table chain
+# Return true if a chain exists in a table
+_fwy_chain_exists()
+{
+    [ -f "${_FWY_TMP}/fw/$1/$2/rules" ]
+}
+
+# _fwy_create_chain table chain
+# Create a new chain in a table and set the default policy
+_fwy_create_chain()
+{
+    local table="$1" chain="$2"
+
+    if ! ${_FWY_MKDIR_CMD} -p "${_FWY_TMP}/fw/$table/$chain" || \
+       ! ${_FWY_TOUCH_CMD} "${_FWY_TMP}/fw/$table/$chain/rules" || \
+       ! ${_FWY_TOUCH_CMD} "${_FWY_TMP}/fw/$table/$chain/policy"; then
+	_fwy_fatal "cannot create chain '$chain' in table '$table'"
+    fi
+
+    # Set default policy
+    local policyvar="FIREWALLY_DEFAULT_${table}_${chain}_POLICY"
+    if [ -n "${!policyvar}" ]; then
+	local _FWY_CURRENT_TABLE="$table" _FWY_CURRENT_CHAIN="$chain"
+	local _FWY_RULES=policy
+	_fwy_rule ${!policyvar} || return 1
+    fi
+    return 0
+}
+
+# }}}
+
+# {{{ Firewall Handling
+
+# _fwy_initialize
+# Create the initial firewall structure
+_fwy_initialize()
+{
+    local _FWY_CURRENT_COMMAND= _FWY_LINENO=
+
+    _fwy_verbose "Initializing"
+
+    _FWY_CURRENT_TABLE=filter
+    _FWY_CURRENT_CHAIN=INPUT
+
+    _fwy_create_chain filter INPUT
+    _fwy_create_chain filter OUTPUT
+    _fwy_create_chain filter FORWARD
+
+    if [ "${FIREWALLY_STATEFUL:-0}" != 0 ]; then
+	_fwy_verbose "Creating stateful firewall"
+	# Add the establied rule
+	local chain
+	for chain in INPUT FORWARD OUTPUT; do
+	    _fwy_iptables filter $chain -m state --state ESTABLISHED,RELATED -j ACCEPT
+	    _fwy_iptables filter $chain -m state --state INVALID -j DROP
+	done
+	# Allow traffic from/to loopback
+	_fwy_iptables filter INPUT -i lo -j ACCEPT
+	_fwy_iptables filter OUTPUT -o lo -j ACCEPT
+    fi
+
+    return 0
+}
+
+# _fwy_clear table policy [allow_ip]
+# Clear a table from the running firewall
+_fwy_clear()
+{
+    local table="$1" policy="$2" allow_ip="$3"
+    local -a table_arg=()
+
+    [ -n "$table" ] && table_arg=("-t" "$table")
+    _fwy_iptables_save "${table_arg[@]}" | \
+	${_FWY_AWK_CMD} '
+/^\*/ { table = substr($1,2); print }
+/^:/ {
+    if ($2 != "-") {
+	if (table == "filter") $2 = policy
+	else $2 = "ACCEPT"
+	$3 = "[0:0]";
+	print
+    }
+    if (allow && table == "filter") {
+	chain = substr($1,2);
+	if (chain == "INPUT") print "-A " chain " -s " allow " -j ACCEPT";
+        if (chain == "OUTPUT") print "-A " chain " -d " allow " -j ACCEPT";
+    }
+}
+/^COMMIT/ { print }
+' policy="$policy" allow="$allow" | \
+	${_FWY_IPTABLES_RESTORE_CMD}
+    return $[ ${PIPESTATUS[0]} + ${PIPESTATUS[1]} + ${PIPESTATUS[2]} ]
+}
+
+# _fwy_load_restore
+# Use iptables-restore to load the firewall
+_fwy_load_restore()
+{
+    local table
+
+    # Load rules
+    ${_FWY_IPTABLES_RESTORE_CMD} < "${_FWY_NEW_FW}" >/dev/null 2>&1 || return 1
+
+    # Success, clear unused tables
+    for table in $(</proc/net/ip_tables_names); do
+	if [ ! -d "${_FWY_TMP}/fw/$table" ]; then
+	    _fwy_clear "$table" ACCEPT || return 1
+	fi
+    done
+    return 0
+}
+
+# _fwy_load_iptables
+# Use iptables commands to load the firewall
+_fwy_load_iptables()
+{
+    local table tabledir chain chaindir
+    local _FWY_USING_IPTABLES=1
+
+    # Flush tables
+    for tabledir in "${_FWY_TMP}/fw"/*; do
+	table="${tabledir##*/}"
+	${_FWY_IPTABLES_CMD} -t "$table" -F || return 1
+	${_FWY_IPTABLES_CMD} -t "$table" -X || return 1
+    done
+
+    # Create chains / set policies
+    for chaindir in "${_FWY_TMP}/fw"/*/*; do
+	table="${chaindir%/*}"
+	table="${table##*/}"
+	chain="${chaindir##*/}"
+	if _fwy_chain_builtin "$chain"; then
+	    ${_FWY_IPTABLES_CMD} -t "$table" -P "$chain" ACCEPT || return 1
+	else
+	    ${_FWY_IPTABLES_CMD} -t "$table" -N "$chain" || return 1
+	fi
+    done
+
+    # Load rules
+    for chaindir in "${_FWY_TMP}/fw"/*/*; do
+	table="${chaindir%/*}"
+	table="${table##*/}"
+	chain="${chaindir##*/}"
+	_fwy_load_iptables_rules rules || return 1
+	_fwy_load_iptables_rules policy || return 1
+    done
+
+    return 0
+}
+
+# _fwy_load_iptables_rules rulesfile
+# Execute iptables commands for rulesfile
+# Uses dynamic vars: table rule chaindir
+_fwy_load_iptables_rules()
+{
+    local rule
+
+    while read rule; do
+	case "$rule" in
+	    "# source:"*)
+		_FWY_LINENO="${rule##*:}"
+		;;
+	    -A*)
+		if ! eval "${_FWY_IPTABLES_CMD} -t $table $rule"; then
+		    _fwy_error "command failed: ${_FWY_IPTABLES_CMD} -t $table $rule"
+		    return 1
+		fi
+	esac
+    done < "$chaindir/$1"
+    return 0
+}
+
+# }}}
+
+# {{{ Rule Generation
+
+# _fwy_iptables table chain args...
+# Add a rule to a chain
+_fwy_iptables()
+{
+    local table="$1" chain="$2"
+    shift 2
+
+    echo "-A $chain $@" >> "${_FWY_TMP}/fw/$table/$chain/$_FWY_RULES" || \
+    	_fwy_fatal "error writing chain rules"
+
+    if [ "$_FWY_MODE" = explain ]; then
+	echo "iptables -t $table -A $chain $@    # $_FWY_RULES"
+    fi
+}
+
+# _fwy_rule args...
+# Generate rules according to args
+# The heart of FireWally
+_fwy_rule()
+{
+    # Variables
+    local arg var val svc
+    local iface=any aiface
+    local oface=any aoface
+    local src=any asrc
+    local dst=any adst
+    local proto=any aproto
+    local srcport=any asrcport
+    local dstport=any adstport
+    local icmptype=any aicmptype
+    local service=any aservice
+    local mac=any amac
+    local mark=any amark
+    local dscp=any adscp
+    local tos=any atos
+    local state=any
+    local limit=
+    local limit_burst=
+    local match=
+    local log=
+    local action=
+    local action_args=
+    local log_match= log_args=
+
+    # Parse arguments
+    while [ $# -gt 0 ]; do
+	arg=
+	case "$1" in
+	    if | iface | inface | interface | input-interface)
+		arg=iface
+		;;
+	    of | oface | outface | outerface | output-interface)
+		arg=oface
+		;;
+	    src | sour | source | saddr | srcaddr | source-address)
+		arg=src
+		;;
+	    dst | dest | destination | daddr | dstaddr | destination-address)
+		arg=dst
+		;;
+	    prot | proto | protocol)
+		arg=proto
+		;;
+	    srcport | sport | source-port)
+		arg=srcport
+		;;
+	    dstport | dport| destination-port)
+		arg=dstport
+		;;
+	    icmptype | icmp-type)
+		arg=icmptype
+		;;
+	    service | svc)
+		[ "$service" != any ] && _fwy_warning "overriding parameter: service '$service' becomes '$2'"
+		[ "$proto" != any ] && _fwy_warning "overriding parameter: service overrides proto '$proto'"
+		[ "$dstport" != any ] && _fwy_warning "overriding parameter: service overrides dstport '$dstport'"
+		[ "$dstport" != any ] && _fwy_warning "overriding parameter: service overrides icmptype '$icmptype'"
+		service=
+		for aservice in ${2//[,;]/ }; do
+		    var="service_${aservice//-/_}"
+		    svc="${!var}"
+		    [ -z "$svc" ] && svc="$aservice"
+		    for val in $svc; do
+			case "$val" in
+			    */*) service="$service $val";;
+			    *) service="$service tcp/$val";;
+			esac
+		    done
+		done
+		shift 2 || shift
+		;;
+	    state)
+		[ "$state" != any ] && _fwy_warning "overriding parameter: state '$state' becomes '$2'"
+		state="$2"
+		shift 2 || shift
+		;;
+	    limit)
+		[ -n "$limit" ] && _fwy_warning "overriding parameter: limit '$limit' becomes '$2'"
+		limit="$2"
+		shift 2 || shift
+		if [ "$1" = burst ]; then
+		    limit_burst="$2"
+		    shift 2 || shift
+		fi
+		;;
+	    mac | mark | dscp | tos)
+		arg="$1"
+		;;
+	    match)
+		match="$match $2"
+		shift 2 || shift
+		;;
+	    log | loglimit | log-limit)
+		local log_arg="$1" text="$2" log_text= log_level=
+		local table="$_FWY_CURRENT_TABLE" chain="$_FWY_CURRENT_CHAIN"
+
+		shift 2 || shift
+		if [ "$1" = level ]; then
+		    log_level="$2"
+		    shift 2 || shift
+		fi
+		[ "$action" = LOG -o -n "$log" ] && _fwy_warning "ignoring parameter: '$log_arg'" && continue
+		eval "log_text=\"${FIREWALLY_LOG_TEXT}\""
+		if [ -n "$action" ]; then
+		    log="LOG"
+		    log_match=
+		    [ "$log_arg" != log ] && \
+			log_match="-m limit --limit $FIREWALLY_LOG_FREQUENCY --limit-burst $FIREWALLY_LOG_BURST"
+		    log_args="--log-prefix \"$log_text\" --log-level ${log_level:-${FIREWALLY_LOG_LEVEL}} $FIREWALLY_LOG_OPTIONS"
+		else
+		    action="LOG"
+		    action_args="--log-prefix \"$log_text\" --log-level ${log_level:-${FIREWALLY_LOG_LEVEL}} $FIREWALLY_LOG_OPTIONS"
+		    log=
+		    log_match=
+		    log_args=
+		    if [ "$log_arg" != log ]; then
+			[ -n "$limit" ] && _fwy_warning "overriding parameter: limit '$limit' becomes '$FIREWALLY_LOG_FREQUENCY'"
+			limit="$FIREWALLY_LOG_FREQUENCY"
+			limit_burst="$FIREWALLY_LOG_BURST"
+		    fi
+		fi
+		;;
+	    accept)
+		[ -n "$action" ] && _fwy_warning "overriding parameter: action '$action' becomes '$1'"
+		action=ACCEPT
+		shift
+		;;
+	    drop)
+		[ -n "$action" ] && _fwy_warning "overriding parameter: action '$action' becomes '$1'"
+		action=DROP
+		shift
+		;;
+	    return | ret)
+		[ -n "$action" ] && _fwy_warning "overriding parameter: action '$action' becomes '$1'"
+		action=RETURN
+		shift
+		;;
+	    jump | goto)
+		[ -n "$action" ] && _fwy_warning "overriding parameter: action '$action' becomes '$1'"
+		[ "$2" = to ] && shift
+		action="$2"
+		shift 2 || shift
+		;;
+	    reject)
+		[ -n "$action" ] && _fwy_warning "overriding parameter: action '$action' becomes '$1'"
+		action=REJECT
+		shift
+		if [ "$1" = with ]; then
+		    [ -n "$2" ] && action_args="--reject-with $2"
+		    shift 2 || shift
+		fi
+		;;
+	    snat)
+		[ -n "$action" ] && _fwy_warning "overriding parameter: action '$action' becomes '$1'"
+		[ "$2" = to ] && shift
+		if [ -n "$2" ]; then
+		    action=SNAT
+		    for v in ${2//[,;]/ }; do
+			action_args="$action_args --to-source $v"
+		    done
+		fi
+		shift 2 || shift
+		;;
+	    dnat)
+		[ -n "$action" ] && _fwy_warning "overriding parameter: action '$action' becomes '$1'"
+		[ "$2" = to ] && shift
+		if [ -n "$2" ]; then
+		    action=DNAT
+		    for v in ${2//[,;]/ }; do
+			action_args="$action_args --to-destination $v"
+		    done
+		fi
+		shift 2 || shift
+		;;
+	    masq | masquerade)
+		[ -n "$action" ] && _fwy_warning "overriding parameter: action '$action' becomes '$1'"
+		action=MASQUERADE
+		shift
+		;;
+	    redirect)
+		[ -n "$action" ] && _fwy_warning "overriding parameter: action '$action' becomes '$1'"
+		action=REDIRECT
+		[ "$2" = to ] && shift
+		[ -n "$2" ] && action_args="--to-ports $2"
+		shift 2 || shift
+		;;
+	    setmark)
+		[ -n "$action" ] && _fwy_warning "overriding parameter: action '$action' becomes '$1'"
+		if [ -n "$2" ]; then
+		    action=MARK
+		    action_args="--set-mark $2"
+		fi
+		shift 2 || shift
+		;;
+	    settos)
+		[ -n "$action" ] && _fwy_warning "overriding parameter: action '$action' becomes '$1'"
+		if [ -n "$2" ]; then
+		    action=TOS
+		    action_args="--set-tos $2"
+		fi
+		shift 2 || shift
+		;;
+	    setdscp)
+		[ -n "$action" ] && _fwy_warning "overriding parameter: action '$action' becomes '$1'"
+		if [ -n "$2" ]; then
+		    action=DSCP
+		    action_args="--set-dscp $2"
+		fi
+		shift 2 || shift
+		;;
+	    imq)
+		[ -n "$action" ] && _fwy_warning "overriding parameter: action '$action' becomes '$1'"
+		if [ "$2" = to ]; then
+		    shift
+		    if [ -n "$2" ]; then
+			action=IMQ
+			action_args="--to-dev $2"
+		    fi
+		else
+		    action=IMQ
+		fi
+		shift
+		;;
+	    target)
+		[ -n "$action" ] && _fwy_warning "overriding parameter: action '$action' becomes '$2'"
+		if [ -n "$2" ]; then
+		    local -a args=($2)
+		    action="${args[0]}"
+		    action_args=("${args[@]:1}")
+		fi
+		shift 2 || shift
+		;;
+	    *)
+		_fwy_error "unknown argument '$1'"
+		return 1
+		;;
+	esac
+	if [ -n "$arg" ]; then
+	    val="${2//[,;]/ }"
+	    [ "${!arg}" != any ] && _fwy_warning "overriding parameter: $arg '${!arg}' becomes '$val'"
+	    eval "$arg=\"\$val\""
+	    shift 2 || shift
+	fi
+    done
+
+    # Done if no action
+    [ -z "$action" ] && return 0
+
+    # Initialize if not done already
+    [ -d "${_FWY_TMP}/fw" ] || _fwy_initialize
+
+    # Record the location of the rules
+    if [ -n "${_FWY_LINENO}" ]; then
+	echo -e "#\n# source: ${FIREWALLY_CONFIG}:${_FWY_LINENO}\n# $_FWY_CURRENT_COMMAND" \
+	    >> "${_FWY_TMP}/fw/$_FWY_CURRENT_TABLE/$_FWY_CURRENT_CHAIN/$_FWY_RULES"
+    fi
+
+    # Expand rules
+    for aiface in $iface; do
+	case "$aiface" in
+	    any) local iface_arg=;;
+	    !*)  local iface_arg="-i ! ${aiface:1}";;
+	    *)   local iface_arg="-i $aiface";;
+	esac
+
+	for aoface in $oface; do
+	    case "$aoface" in
+		any) local oface_arg=;;
+	        !*)  local oface_arg="-o ! ${aoface:1}";;
+		*)   local oface_arg="-o $aoface";;
+	    esac
+
+	    for asrc in $src; do
+		case "$asrc" in
+		    any) local src_arg=;;
+	            !*)  local src_arg="-s ! ${asrc:1}";;
+		    *)   local src_arg="-s $asrc";;
+		esac
+
+		for adst in $dst; do
+		    case "$adst" in
+			any) local dst_arg=;;
+	                !*)  local dst_arg="-d ! ${adst:1}";;
+			*)   local dst_arg="-d $adst";;
+		    esac
+
+		    for aservice in $service; do
+			case "$aservice" in
+			    any)
+				;;
+			    tcp/* | udp/* | TCP/* | UDP/*)
+				proto="${aservice%%/*}"
+				dstport="${aservice#*/}"
+				dstport="${dstport//[,;]/ }"
+				dstport="${dstport:-any}"
+				icmptype=any
+				;;
+			    icmp/* | ICMP/*)
+				proto=icmp
+				dstport=any
+				icmptype="${aservice#*/}"
+				icmptype="${icmptype:-any}"
+				;;
+			    *)
+				proto="${aservice%%/*}"
+				dstport=any
+				icmptype=any
+				;;
+			esac
+
+			for aproto in $proto; do
+			    case "$aproto" in
+				any) local proto_arg=;;
+				!*)  local proto_arg="-p ! ${aproto:1}";;
+				*)   local proto_arg="-p $aproto";;
+			    esac
+
+			    for aicmptype in $icmptype; do
+				case "$aicmptype" in
+				    any) local icmptype_arg=;;
+				    !*)  local icmptype_arg="--icmp-type ! ${aicmptype:1}";;
+				    *)   local icmptype_arg="--icmp-type $aicmptype";;
+				esac
+
+				if [ "${FIREWALLY_USE_MPORT:-0}" != 0 -a "$srcport" != any ]; then
+				    local -a sports=($srcport)
+				    if [ "${#sports[@]}" -gt 1 -a "${#sports[@]}" -le 7 ]; then
+					local sportsc="${sports[@]}"
+					local srcport_arg="-m mport --sports ${sportsc// /,}"
+					srcport=__mport__
+				    fi
+				fi
+				for asrcport in $srcport; do
+				    case "$asrcport" in
+					any) local srcport_arg=;;
+					__mport__);;
+					!*)  local srcport_arg="--sport ! ${asrcport:1}";;
+					*)   local srcport_arg="--sport $asrcport";;
+				    esac
+
+				    if [ "${FIREWALLY_USE_MPORT:-0}" != 0 -a "$dstport" != any ]; then
+					local -a dports=($dstport)
+					if [ "${#dports[@]}" -gt 1 -a "${#dports[@]}" -le 7 ]; then
+					    local dportsc="${dports[@]}"
+					    local dstport_arg="-m mport --dports ${dportsc// /,}"
+					    dstport=__mport__
+					fi
+				    fi
+				    for adstport in $dstport; do
+					case "$adstport" in
+					    any) local dstport_arg=;;
+					    __mport__);;
+					    !*)  local dstport_arg="--dport ! ${adstport:1}";;
+					    *)   local dstport_arg="--dport $adstport";;
+					esac
+
+					for amac in $mac; do
+					    case "$amac" in
+						any) local mac_arg=;;
+						!*)  local mac_arg="-m mac ! --mac-source ${amac:1}";;
+						*)   local mac_arg="-m mac --mac-source $amac";;
+					    esac
+
+					    for amark in $mark; do
+						case "$amark" in
+						    any) local mark_arg=;;
+						    !*)  local mark_arg="-m mark ! --mark ${amark:1}";;
+						    *)   local mark_arg="-m mark --mark $amark";;
+						esac
+
+						for adscp in $dscp; do
+						    case "$adscp" in
+							any) local dscp_arg=;;
+						        !*)  local dscp_arg="-m dscp ! --dscp ${adscp:1}";;
+							*)   local dscp_arg="-m dscp --dscp $adscp";;
+						    esac
+
+						    for atos in $tos; do
+							case "$atos" in
+							    any) local tos_arg=;;
+						            !*)  local tos_arg="-m tos ! --tos ${atos:1}";;
+							    *)   local tos_arg="-m tos --tos $atos";;
+							esac
+
+							case "$state" in
+							    any) local state_arg=;;
+							    !*)  local state_arg="-m state ! --state ${state:1}";;
+							    *)   local state_arg="-m state --state $state";;
+							esac
+
+							if [ -z "$limit" ]; then
+							    local limit_arg=
+							elif [ -z "$limit_burst" ]; then
+							    local limit_arg="-m limit --limit $limit"
+							else
+							    local limit_arg="-m limit --limit $limit --limit-burst $limit_burst"
+							fi
+
+							local base_cmd="$_FWY_CURRENT_TABLE $_FWY_CURRENT_CHAIN \
+							    $iface_arg $oface_arg $src_arg $dst_arg $proto_arg \
+							    $icmptype_arg $srcport_arg $dstport_arg \
+							    $mac_arg $mark_arg $dscp_arg $tos_arg $state_arg \
+							    $match $limit_arg"
+
+							if [ -n "$log" ]; then
+							    _fwy_iptables $base_cmd $log_match -j "$log" $log_args || return 1
+							fi
+							_fwy_iptables $base_cmd -j "$action" $action_args || return 1
+
+						    done
+						done
+					    done
+					done
+				    done
+				done
+			    done
+			done
+		    done
+		done
+	    done
+	done
+    done
+
+    return 0
+}
+
+# }}}
+
+# {{{ Commands
+
+# version n
+version()
+{
+    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+
+    [ "$1" != "$_FWY_CONFIG_VERSION" ] && \
+	_fwy_error "configuration version '$1' not supported" && return 1
+}
+
+# iptables args..
+iptables()
+{
+    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    local table="$_FWY_CURRENT_TABLE" chain="$_FWY_CURRENT_CHAIN"
+    local arg
+
+    if [ "$1" = "-t" ]; then
+	_fwy_valid_name table "$2" 30 || return 1
+	table="$2"
+	shift 2
+    fi
+    if [ "$1" = "-A" ]; then
+	_fwy_valid_name chain "$2" 30 || return 1
+	chain="$2"
+	shift 2
+    fi
+
+    _fwy_iptables "$@"
+}
+
+# chain [table] name
+chain()
+{
+    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    local table="$_FWY_CURRENT_TABLE" chain
+
+    if [ -n "$2" ]; then
+	_fwy_valid_name table "$1" 30 || return 1
+	table="$1"
+	shift
+    fi
+    chain="$1"
+    _fwy_valid_name chain "$chain" 30 || return 1
+
+    # Initialize if not done already
+    [ -d "${_FWY_TMP}/fw" ] || _fwy_initialize
+
+    if ! _fwy_chain_exists "$table" "$chain"; then
+	# Create chain
+	_fwy_verbose "Creating chain '$chain' in table '$table'"
+	[ "$_FWY_MODE" = explain ] && echo "iptables -t $table -N $chain"
+	_fwy_create_chain "$table" "$chain"
+    fi
+
+    _FWY_CURRENT_TABLE="$table"
+    _FWY_CURRENT_CHAIN="$chain"
+}
+
+# policy args...
+policy()
+{
+    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    local _FWY_RULES=policy
+    local args="$@"
+
+    if [ -z "$args" -o "$args" = return ]; then
+	: > "${_FWY_TMP}/fw/${_FWY_CURRENT_TABLE}/${_FWY_CURRENT_CHAIN}/policy"
+    else
+        _fwy_rule "$@"
+    fi
+}
+
+# rule args...
+rule()
+{
+    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    _fwy_rule "$@"
+}
+
+log()
+{
+    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    _fwy_rule $FUNCNAME "$@"
+}
+
+loglimit()
+{
+    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    _fwy_rule $FUNCNAME "$@"
+}
+
+accept()
+{
+    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    _fwy_rule $FUNCNAME "$@"
+}
+
+drop()
+{
+    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    _fwy_rule $FUNCNAME "$@"
+}
+
+ret()
+{
+    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    _fwy_rule return "$@"
+}
+
+jump()
+{
+    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    _fwy_rule $FUNCNAME "$@"
+}
+
+goto()
+{
+    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    _fwy_rule $FUNCNAME "$@"
+}
+
+reject()
+{
+    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    _fwy_rule $FUNCNAME "$@"
+}
+
+snat()
+{
+    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    _fwy_rule $FUNCNAME "$@"
+}
+
+dnat()
+{
+    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    _fwy_rule $FUNCNAME "$@"
+}
+
+masq()
+{
+    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    _fwy_rule $FUNCNAME "$@"
+}
+
+masquerade()
+{
+    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    _fwy_rule $FUNCNAME "$@"
+}
+
+redirect()
+{
+    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    _fwy_rule $FUNCNAME "$@"
+}
+
+setmark()
+{
+    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    _fwy_rule $FUNCNAME "$@"
+}
+
+settos()
+{
+    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    _fwy_rule $FUNCNAME "$@"
+}
+
+setdscp()
+{
+    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    _fwy_rule $FUNCNAME "$@"
+}
+
+imq()
+{
+    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    _fwy_rule $FUNCNAME "$@"
+}
+
+target()
+{
+    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    _fwy_rule $FUNCNAME "$@"
+}
+
+service()
+{
+    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    _fwy_rule accept $FUNCNAME "$@"
+}
+
+protection()
+{
+    local _FWY_CURRENT_COMMAND="$FUNCNAME $@"
+    local _FWY_RULES=rules
+    local type="$1" rate="$2" burst="$3"
+    local protections prot chain
+
+    : "${rate:=50/s}" "${burst:=20}"
+    [ "$_FWY_CURRENT_TABLE" != filter ] && _fwy_error "protections only work in table 'filter'" && return 1
+
+    # Initialize if not done already
+    [ -d "${_FWY_TMP}/fw" ] || _fwy_initialize
+
+    # Parse arguments
+    for prot in ${type//[,;]/ }; do
+	case "$prot" in
+	    none | '')
+		;;
+	    strong | full | all)
+		protections="$protections nosyn synflood bad icmpflood"
+		;;
+	    new-tcp-no-syn | new-tcp-w/o-syn)
+		protections="$protections nosyn"
+		;;
+	    malformed | bad)
+		protections="$protections bad"
+		;;
+	    syn-floods)
+		protections="$protections synflood"
+		;;
+	    icmp-floods)
+		protections="$protections icmpflood"
+		;;
+	    unroutable-src | unroutable-source)
+		protections="$protections unrt_s"
+		;;
+	    unroutable-dst | unroutable-destination)
+		protections="$protections unrt_d"
+		;;
+	    *)
+		_fwy_error "unknown protection: '$prot'"
+		return 1
+		;;
+	esac
+    done
+
+    # Record the location of the rules
+    if [ -n "${_FWY_LINENO}" ]; then
+	echo -e "#\n# source: ${FIREWALLY_CONFIG}:${_FWY_LINENO}\n# $_FWY_CURRENT_COMMAND" \
+	    >> "${_FWY_TMP}/fw/$_FWY_CURRENT_TABLE/$_FWY_CURRENT_CHAIN/$_FWY_RULES"
+    fi
+
+    # Process protections
+    for prot in $protections; do
+	chain="${_FWY_CURRENT_CHAIN}_${prot}"
+	eval ": \${FIREWALLY_DEFAULT_${_FWY_CURRENT_TABLE}_${chain}_POLICY:=drop log}"
+	case "$prot" in
+	    nosyn)
+		if ! _fwy_chain_exists "$_FWY_CURRENT_TABLE" "$chain"; then
+		    _fwy_create_chain "$_FWY_CURRENT_TABLE" "$chain" || return 1
+		fi
+		_fwy_iptables "$_FWY_CURRENT_TABLE" "$_FWY_CURRENT_CHAIN" \
+		    -p tcp ! --syn -m state --state NEW -j "$chain" || return 1
+		;;
+	    bad)
+		if ! _fwy_chain_exists "$_FWY_CURRENT_TABLE" "$chain"; then
+		    _fwy_create_chain "$_FWY_CURRENT_TABLE" "$chain" || return 1
+		fi
+		local flags
+		for flags in ALL:ALL ALL:NONE SYN,RST:SYN,RST ALL:SYN,RST,ACK,FIN,URG ALL:FIN,URG,PSH; do
+		    _fwy_iptables "$_FWY_CURRENT_TABLE" "$_FWY_CURRENT_CHAIN" \
+			-p tcp --tcp-flags "${flags%%:*}" "${flags##*:}" -j "$chain" || return 1
+		done
+		;;
+	    synflood)
+		if ! _fwy_chain_exists "$_FWY_CURRENT_TABLE" "$chain"; then
+		    _fwy_create_chain "$_FWY_CURRENT_TABLE" "$chain" || return 1
+		    _fwy_iptables "$_FWY_CURRENT_TABLE" "$chain" \
+			-m limit --limit "$rate" --limit-burst "$burst" -j RETURN || return 1
+		fi
+		_fwy_iptables "$_FWY_CURRENT_TABLE" "$_FWY_CURRENT_CHAIN" \
+		    -p tcp --syn -j "$chain" || return 1
+		;;
+	    icmpflood)
+		if ! _fwy_chain_exists "$_FWY_CURRENT_TABLE" "$chain"; then
+		    _fwy_create_chain "$_FWY_CURRENT_TABLE" "$chain" || return 1
+		    _fwy_iptables "$_FWY_CURRENT_TABLE" "$chain" \
+			-m limit --limit "$rate" --limit-burst "$burst" -j RETURN || return 1
+		fi
+		_fwy_iptables "$_FWY_CURRENT_TABLE" "$_FWY_CURRENT_CHAIN" \
+		    -p icmp -j "$chain" || return 1
+		;;
+	    unrt_s | unrt_d)
+		if ! _fwy_chain_exists "$_FWY_CURRENT_TABLE" unroutable; then
+		    _fwy_create_chain "$_FWY_CURRENT_TABLE" unroutable || return 1
+		fi
+		local ip
+		for ip in ${UNROUTABLE_IPS//[,;]/ }; do
+		    _fwy_iptables "$_FWY_CURRENT_TABLE" "$_FWY_CURRENT_CHAIN" \
+			"-${prot#unrt_}" "$ip" -j unroutable || return 1
+		done
+		;;
+	esac
+    done
+
+    return 0
+}
+
+# }}}
+
+# {{{ Main
+
+# _fwy_cleanup
+# Trap handler: remove temporary directory
+_fwy_cleanup()
+{
+    local rc=$?
+
+    if [ -n "$_FWY_TMP" -a "$_FWY_TMP" != "/" ]; then
+	${_FWY_RM_CMD} -rf "${_FWY_TMP}"
+    fi
+}
+
+# _fwy_usage
+# Show program usage
+_fwy_usage()
+{
+    cat >&2 <<EOF
+Usage: $0 [configfile] [argument]
+
+Arguments:
+    start        Activate firewall configuration
+    try		 Activate firewall, wait until user types "commit"
+    stop	 Stop a running firewall
+    clear
+    restart	 Activate firewall configuration
+    reload
+    status	 Show the running firewall
+    panic	 Block all IP communication
+    debug	 Show resulting rules
+    explain	 Enter interactive mode
+    interactive
+    <filename>   Configuration file (default: $FIREWALLY_CONFIG)
+
+Options:
+    verbose	 Verbose execution
+    help	 Show this help
+
+FireWally $FIREWALLY_VERSION ($FIREWALLY_REVISION), by tavy@ylabs.com
+
+EOF
+}
+
+# Process arguments
+while [ -n "$1" ]; do
+    case "$1" in
+	start | run | restart | reload)
+	    _FWY_MODE=start
+	    ;;
+	try)
+	    _FWY_MODE=try
+	    ;;
+	stop | clear)
+	    _FWY_MODE=stop
+	    ;;
+	panic)
+	    _FWY_MODE=panic
+	    ;;
+	debug)
+	    _FWY_MODE=debug
+	    ;;
+	explain | interactive)
+	    _FWY_MODE=explain
+	    ;;
+	status | show)
+	    _FWY_MODE=status
+	    ;;
+	verbose | -v | --verbose)
+	    _FWY_VERBOSE=1
+	    ;;
+	version | --version)
+	    echo "FireWally $FIREWALLY_VERSION ($FIREWALLY_REVISION), by tavy@ylabs.com"
+	    exit 0
+	    ;;
+	help | -h | --help)
+	    _fwy_usage
+	    exit 0
+	    ;;
+	*)
+	    if [ -f "$1" ]; then
+		FIREWALLY_CONFIG="$1"
+		: "${_FWY_MODE:=try}"
+	    else
+		echo >&2 "firewally: Unknown argument '$1'"
+		_fwy_usage
+		exit 1
+	    fi
+	    ;;
+    esac
+    shift
+done
+
+if [ -z "$_FWY_MODE" ]; then
+    _fwy_usage
+    exit 1
+fi
+
+# Locate required commands
+_fwy_find_cmd _FWY_AWK_CMD gawk
+_fwy_find_cmd _FWY_CAT_CMD cat
+_fwy_find_cmd _FWY_LESS_CMD less
+_fwy_find_cmd _FWY_MKDIR_CMD mkdir
+_fwy_find_cmd _FWY_MKTEMP_CMD mktemp
+_fwy_find_cmd _FWY_RM_CMD rm
+_fwy_find_cmd _FWY_TOUCH_CMD touch
+if [ "$_FWY_MODE" != explain -a "$_FWY_MODE" != debug ]; then
+    _fwy_find_cmd _FWY_IPTABLES_CMD iptables
+    _fwy_find_cmd _FWY_IPTABLES_RESTORE_CMD iptables-restore
+    _fwy_find_cmd _FWY_IPTABLES_SAVE_CMD iptables-save
+    _fwy_find_cmd _FWY_LSMOD_CMD lsmod
+    _fwy_find_cmd _FWY_MODPROBE_CMD modprobe
+fi
+
+# Easy commands
+case "$_FWY_MODE" in
+    status)
+	# Show running firewall
+	if [ -f /proc/net/ip_tables_names ]; then
+	    for table in $(</proc/net/ip_tables_names); do
+		echo
+		echo "--- $table ---------------------------------------------------------------------"
+		echo
+		${_FWY_IPTABLES_CMD} -t "$table" -nvL
+	    done | ${_FWY_LESS_CMD}
+	else
+	    echo "Firewall not running."
+	fi
+	exit 0
+	;;
+
+    stop)
+	# Stop firewall
+	echo -n "firewally: Stopping firewall: "
+	if _fwy_clear "" ACCEPT; then
+	    echo "done"
+	    exit 0
+	else
+	    echo "FAILED"
+	    exit 1
+	fi
+	;;
+
+    panic)
+	# Block firewall
+	echo -n "firewally: Blocking firewall${SSH_CLIENT:+, allowing access from $SSH_CLIENT}: "
+	if _fwy_clear "" DROP "$SSH_CLIENT"; then
+	    echo "done"
+	    exit 0
+	else
+	    echo "FAILED"
+	    exit 1
+	fi
+	;;
+esac
+
+# Initialize working environment
+_FWY_TMP=`${_FWY_MKTEMP_CMD} -d -t fwy.XXXXXX` || _fwy_fatal "cannot create temporary directory"
+trap _fwy_cleanup EXIT INT
+_FWY_OLD_FW="${_FWY_TMP}/old.fw"
+_FWY_NEW_FW="${_FWY_TMP}/new.fw"
+
+# Check if the mport iptables match is available
+if [ "${FIREWALLY_USE_MPORT:-0}" != 0 ]; then
+    ${_FWY_IPTABLES_CMD} -m mport --help >/dev/null 2>&1 || FIREWALLY_USE_MPORT=
+fi
+
+if [ "$_FWY_MODE" = explain ]; then
+    # Interactive mode
+    FIREWALLY_CONFIG="Interactive User Input"
+    _FWY_LINENO=1
+    _FWY_NEW_CONF="${_FWY_TMP}/new.conf"
+
+    echo "version $_FWY_CONFIG_VERSION" > "${_FWY_NEW_CONF}"
+    echo "FireWally -- Interactive Mode"
+
+    while :; do
+	read -p "FireWally [$_FWY_CURRENT_TABLE:$_FWY_CURRENT_CHAIN]> " -e -r
+	[ -z "$REPLY" ] && continue
+	set -- ${REPLY}
+	case "$1" in
+	    help)
+		${_FWY_CAT_CMD} <<EOF
+You can use anything a FireWally configuration file accepts, including variables,
+loops, etc. Take only care to write loops in one row.
+Additionaly, you can use the following commands:
+
+    help    print this text on your screen
+    show    show all the successfull commands so far
+    quit    show the interactively given configuration file and quit
+    in      same as typing: zone net eth0; from net to fw
+
+EOF
+		;;
+	    show)
+		echo
+		echo "--------------------------------------------------"
+		${_FWY_CAT_CMD} "${_FWY_NEW_CONF}"
+		echo "--------------------------------------------------"
+		;;
+	    quit | exit)
+		if [ "$_FWY_LINENO" -gt 1 ]; then
+		    echo
+		    echo "--------------------------------------------------"
+		    ${_FWY_CAT_CMD} "${_FWY_NEW_CONF}"
+		    echo "--------------------------------------------------"
+		fi
+		exit 0
+	        ;;
+	    *)
+		eval "$@"
+		if [ $? -gt 0 ]; then
+		    printf "\n# FAILED\n"
+		else
+		    case "$1" in
+			chain | *=*)
+			    echo >> "${_FWY_NEW_CONF}"
+			    ;;
+			*)
+			    echo -n "    " >> "${_FWY_NEW_CONF}"
+			    ;;
+		    esac
+		    echo "$@" >> "${_FWY_NEW_CONF}"
+		    _FWY_LINENO=$[_FWY_LINENO + 1]
+		fi
+		;;
+	esac
+    done
+fi
+
+if [ "$_FWY_MODE" != debug ]; then
+    echo -n "firewally: Starting firewall: "
+    [ -n "$_FWY_VERBOSE" ] && echo
+
+    # Save old firewall
+    _fwy_verbose "Saving old firewall"
+    if [ -f /proc/net/ip_tables_names ]; then
+	_fwy_iptables_save -c > "${_FWY_OLD_FW}" || _fwy_fatal "cannot save current firewall"
+    else
+	${_FWY_CAT_CMD} > "${_FWY_OLD_FW}" <<EOF
+*filter
+:INPUT ACCEPT [0:0]
+:FORWARD ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+COMMIT
+EOF
+    fi
+fi
+
+# Add line number information
+_fwy_verbose "Preprocessing source"
+[ -f "$FIREWALLY_CONFIG" ] || _fwy_fatal "configuration file '$FIREWALLY_CONFIG' does not exist"
+[ -r "$FIREWALLY_CONFIG" ] || _fwy_fatal "cannot read configuration file '$FIREWALLY_CONFIG'"
+
+${_FWY_AWK_CMD} "/^[[:space:]]*(accept|chain|dnat|drop|goto|imq|iptables|jump|log|loglimit|masq|masquerade\
+|policy|protection|redirect|reject|ret|rule|service|setdscp|setmark|settos|snat|target|version)\\>/ \
+{ printf \"_FWY_LINENO=%d; \", NR }
+{ print }" "$FIREWALLY_CONFIG" > "${_FWY_TMP}/source.config" || \
+    _fwy_fatal "cannot convert source file"
+
+# Execute configuration
+_fwy_verbose "Executing configuration"
+enable -n trap
+enable -n exit
+source "${_FWY_TMP}/source.config" || _fwy_fatal "cannot execute configuration"
+enable trap
+enable exit
+
+# Configuration OK, generate rules
+_fwy_verbose "Generating rules"
+for tabledir in "${_FWY_TMP}/fw"/*; do
+    table="${tabledir##*/}"
+    echo "*$table"
+    for chaindir in "$tabledir"/*; do
+	chain="${chaindir##*/}"
+	echo ":$chain -"
+    done
+    ${_FWY_CAT_CMD} "$tabledir"/*/{rules,policy} || _fwy_fatal "cannot create rules"
+    echo "COMMIT"
+done > "${_FWY_NEW_FW}" || _fwy_fatal "cannot create rules"
+
+
+if [ "$_FWY_MODE" = debug ]; then
+    # Show the generated firewall
+    if [ -t 1 ]; then
+	${_FWY_LESS_CMD} -F "${_FWY_NEW_FW}"
+    else
+	${_FWY_CAT_CMD} "${_FWY_NEW_FW}"
+    fi
+    exit 0
+fi
+
+# Activate!
+if [ ! -f /proc/net/ip_tables_names ]; then
+    _fwy_verbose "Loading ip_tables module"
+    ${_FWY_MODPROBE_CMD} ip_tables || _fwy_fatal "inserting module 'ip_tables' failed"
+fi
+
+rc=1
+if [ "${FIREWALLY_USE_IPTABLES_RESTORE:-0}" != 0 ]; then
+    # Try iptables-restore
+    _fwy_verbose "Activating firewall with iptables-restore"
+    _fwy_load_restore && rc=0
+fi
+if [ "$rc" -ne 0 ]; then
+    # Try iptables
+    _fwy_verbose "Activating firewall with iptables"
+    _fwy_load_iptables && rc=0
+    [ "$rc" = 0 -a "${FIREWALLY_USE_IPTABLES_RESTORE:-0}" != 0 ] && \
+	_fwy_warning "Activation failed with iptables-restore, but succeeded with iptables"
+fi
+if [ "$rc" -ne 0 ]; then
+    echo "FAILED"
+
+    echo -n "firewally: Restoring old firewall: "
+    if ${_FWY_IPTABLES_RESTORE_CMD} < "${_FWY_OLD_FW}"; then
+	echo "done"
+    else
+	# We're screwed
+	echo "FAILED"
+    fi
+    exit 3
+fi
+
+# Set up routing
+if [ -n "$FIREWALLY_ROUTING" ]; then
+    _fwy_verbose "Setting up routing"
+    echo "$FIREWALLY_ROUTING" > /proc/sys/net/ipv4/ip_forward
+fi
+
+# Load connection-tracking / nat modules
+_fwy_verbose "Loading kernel conntrack/nat modules"
+modules=
+modules_skip=`${_FWY_LSMOD_CMD} | ${_FWY_AWK_CMD} '/^ip_/ { printf "%s ", $1 }'`
+moddir=/lib/modules/$(uname -r)/kernel/net/ipv4/netfilter
+for module in $FIREWALLY_MODULES; do
+    case "$module" in
+	all | ALL)
+	    if [ "${FIREWALLY_STATEFUL:-0}" != 0 ]; then
+		# List conntrack modules
+		for mod in $moddir/ip_conntrack_*.*; do
+		    [ -f "$mod" ] || continue
+		    basemod="${mod##*/}"
+		    modules="$modules ${basemod%%.*}"
+		done
+		# List nat modules if the firewall has the "nat" table
+		if [ -d "${_FWY_TMP}/fw/nat" ]; then
+		    for mod in $moddir/ip_nat_*.*; do
+			[ -f "$mod" ] || continue
+			basemod="${mod##*/}"
+			modules="$modules ${basemod%%.*}"
+		    done
+		fi
+	    fi
+	    ;;
+	-*)
+	    mod="${module%%.*}"
+	    modules_skip="$modules_skip ${mod:1}"
+	    ;;
+	*)
+	    modules="$modules ${module%%.*}"
+	    ;;
+    esac
+done
+for module in $modules; do
+    case " $modules_skip " in
+	*" $module "*)
+	    ;;
+	*)
+	    ${_FWY_MODPROBE_CMD} "$module"
+	    ;;
+    esac
+done
+
+echo "done"
+
+if [ "$_FWY_MODE" = try ]; then
+    # Ask whether to keep the firewall
+    read -p "Keep the firewall? (type 'commit' to accept - 30 seconds timeout): " -t 30 -e
+    ret=$?
+    echo
+    if [ $ret -ne 0 -o "${REPLY}" != commit ]; then
+	echo -n "firewally: Restoring old firewall: "
+	if ${_FWY_IPTABLES_RESTORE_CMD} < "${_FWY_OLD_FW}"; then
+	    echo "done"
+	    exit 0
+	else
+	    echo "FAILED"
+	    exit 3
+	fi
+    fi
+fi
+
+exit 0
+
+# }}}
