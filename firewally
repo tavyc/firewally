@@ -291,29 +291,29 @@ _fwy_chain_builtin()
     return 1
 }
 
-# _fwy_chain_exists table chain
-# Return true if a chain exists in a table
+# _fwy_chain_exists chain
+# Return true if a chain exists in the current table
 _fwy_chain_exists()
 {
-    [ -d "${_FWY_TMP}/fw/$1/$2" ]
+    [ -d "${_FWY_TMP}/fw/${_FWY_TABLE}/$1" ]
 }
 
-# _fwy_create_chain table chain
-# Create a new chain in a table and set the default policy
+# _fwy_create_chain chain
+# Create a new chain in the current table and set the default policy
 _fwy_create_chain()
 {
-    local table="$1" chain="$2" policyvar
+    local chain="$1" policyvar
 
-    ${_FWY_MKDIR_CMD} -p "${_FWY_TMP}/fw/$table/$chain" || \
-	_fwy_fatal "cannot create chain '$chain' in table '$table'"
+    ${_FWY_MKDIR_CMD} -p "${_FWY_TMP}/fw/$_FWY_TABLE/$chain" || \
+	_fwy_fatal "cannot create chain '$chain' in table '$_FWY_TABLE'"
 
     # Set default policy
-    policyvar="FIREWALLY_${table}_${chain}_POLICY"
+    policyvar="FIREWALLY_${_FWY_TABLE}_${chain}_POLICY"
     if [ -n "${!policyvar}" ]; then
 	# @@@ debug
-	[ -f "${_FWY_TMP}/fw/$table/$chain/r${_FWY_RULES_POLICY}" ] && _fwy_fatal "policy already defined?"
-	_FWY_TABLE="$table" _FWY_CHAIN="$chain" _FWY_RULES=$_FWY_RULES_POLICY \
-	    _fwy_rule ${!policyvar} || return 1
+	[ -f "${_FWY_TMP}/fw/$_FWY_TABLE/$chain/r${_FWY_RULES_POLICY}" ] && _fwy_fatal "policy already defined?"
+	local _FWY_CHAIN="$chain" _FWY_RULES=$_FWY_RULES_POLICY
+	_fwy_rule ${!policyvar} || return 1
     fi
     return 0
 }
@@ -333,21 +333,22 @@ _fwy_initialize()
     _FWY_TABLE=filter
     _FWY_CHAIN=INPUT
 
-    _fwy_create_chain filter INPUT
-    _fwy_create_chain filter OUTPUT
-    _fwy_create_chain filter FORWARD
+    _fwy_create_chain INPUT
+    _fwy_create_chain OUTPUT
+    _fwy_create_chain FORWARD
 
     if [ "${FIREWALLY_STATEFUL:-0}" != 0 ]; then
 	_fwy_verbose "Creating stateful firewall"
 	# Add the establied rule
-	local chain
-	for chain in INPUT FORWARD OUTPUT; do
-	    _fwy_iptables filter $chain -m state --state ESTABLISHED,RELATED -j ACCEPT
+	for _FWY_CHAIN in INPUT FORWARD OUTPUT; do
+	    _fwy_iptables -m state --state ESTABLISHED,RELATED -j ACCEPT
 	done
     fi
     # Allow traffic from/to loopback
-    _fwy_iptables filter INPUT -i lo -j ACCEPT
-    _fwy_iptables filter OUTPUT -o lo -j ACCEPT
+    _FWY_CHAIN=OUTPUT
+    _fwy_iptables -o lo -j ACCEPT
+    _FWY_CHAIN=INPUT
+    _fwy_iptables -i lo -j ACCEPT
 
     return 0
 }
@@ -453,18 +454,15 @@ _fwy_load_iptables()
 
 # {{{ Rule Generation
 
-# _fwy_iptables table chain args...
-# Add a rule to a chain
+# _fwy_iptables args...
+# Add a rule to the current chain
 _fwy_iptables()
 {
-    local table="$1" chain="$2"
-    shift 2
-
-    echo "-A $chain $@" >> "${_FWY_TMP}/fw/$table/$chain/r$_FWY_RULES" || \
+    echo "-A $_FWY_CHAIN $@" >> "${_FWY_TMP}/fw/$_FWY_TABLE/$_FWY_CHAIN/r$_FWY_RULES" || \
     	_fwy_fatal "error writing chain rules"
 
     if [ "$_FWY_MODE" = explain ]; then
-	echo "iptables -t $table -A $chain $@    # $_FWY_RULES"
+	echo "iptables -t $_FWY_TABLE -A $_FWY_CHAIN $@  # $_FWY_RULES"
     fi
 }
 
@@ -732,8 +730,8 @@ _fwy_rule()
     [ -d "${_FWY_TMP}/fw" ] || _fwy_initialize
 
     # Create target chain
-    if [ -n "$action_is_chain" ] && ! _fwy_chain_exists "$_FWY_TABLE" "$action"; then
-	_fwy_create_chain "$_FWY_TABLE" "$action" || return 1
+    if [ -n "$action_is_chain" ] && ! _fwy_chain_exists "$action"; then
+	_fwy_create_chain "$action" || return 1
     fi
 
     # Record the location of the rules
@@ -884,9 +882,8 @@ _fwy_rule()
 							    local limit_arg="-m limit --limit $limit --limit-burst $limit_burst"
 							fi
 
-							local base_cmd="$_FWY_TABLE $_FWY_CHAIN \
-							    $iface_arg $oface_arg $src_arg $dst_arg $proto_arg \
-							    $icmptype_arg $srcport_arg $dstport_arg \
+							local base_cmd="$iface_arg $oface_arg $src_arg $dst_arg \
+							    $proto_arg $icmptype_arg $srcport_arg $dstport_arg \
 							    $mac_arg $mark_arg $dscp_arg $tos_arg $state_arg \
 							    $match $limit_arg"
 
@@ -935,16 +932,15 @@ version()
 iptables()
 {
     local _FWY_COMMAND="$FUNCNAME $@" _FWY_RULES=$_FWY_RULES_USER
-    local table="$_FWY_TABLE" chain="$_FWY_CHAIN"
 
     if [ "$1" = "-t" ]; then
 	_fwy_valid_name table "$2" 30 || return 1
-	table="$2"
+	local _FWY_TABLE="$2"
 	shift 2
     fi
     if [ "$1" = "-A" ]; then
 	_fwy_valid_name chain "$2" 30 || return 1
-	chain="$2"
+	local _FWY_CHAIN="$2"
 	shift 2
     fi
 
@@ -968,15 +964,15 @@ chain()
     # Initialize if not done already
     [ -d "${_FWY_TMP}/fw" ] || _fwy_initialize
 
-    if ! _fwy_chain_exists "$table" "$chain"; then
+    _FWY_TABLE="$table"
+    _FWY_CHAIN="$chain"
+
+    if ! _fwy_chain_exists "$chain"; then
 	# Create chain
 	_fwy_verbose "Creating chain '$chain' in table '$table'"
 	[ "$_FWY_MODE" = explain ] && echo "iptables -t $table -N $chain"
-	_fwy_create_chain "$table" "$chain"
+	_fwy_create_chain "$chain"
     fi
-
-    _FWY_TABLE="$table"
-    _FWY_CHAIN="$chain"
 }
 
 # policy args...
@@ -1181,67 +1177,50 @@ protection()
 	eval ": \${FIREWALLY_${_FWY_TABLE}_${chain}_POLICY:=drop loglimit}"
 	case "$prot" in
 	    nosyn)
-		if ! _fwy_chain_exists "$_FWY_TABLE" "$chain"; then
-		    _fwy_create_chain "$_FWY_TABLE" "$chain" || return 1
-		fi
-		_fwy_iptables "$_FWY_TABLE" "$_FWY_CHAIN" \
-		    -p tcp ! --syn -m state --state NEW -j "$chain" || return 1
+		_fwy_chain_exists "$chain" || _fwy_create_chain "$chain" || return 1
+		_fwy_iptables -p tcp ! --syn -m state --state NEW -j "$chain" || return 1
 		;;
 	    bad)
-		if ! _fwy_chain_exists "$_FWY_TABLE" "$chain"; then
-		    _fwy_create_chain "$_FWY_TABLE" "$chain" || return 1
-		fi
+		_fwy_chain_exists "$chain" || _fwy_create_chain "$chain" || return 1
 		local flags
 		for flags in ALL:ALL ALL:NONE SYN,RST:SYN,RST ALL:SYN,RST,ACK,FIN,URG ALL:FIN,URG,PSH; do
-		    _fwy_iptables "$_FWY_TABLE" "$_FWY_CHAIN" \
-			-p tcp --tcp-flags "${flags%%:*}" "${flags##*:}" -j "$chain" || return 1
+		    _fwy_iptables -p tcp --tcp-flags "${flags%%:*}" "${flags##*:}" -j "$chain" || return 1
 		done
 		;;
 	    inv)
-		if ! _fwy_chain_exists "$_FWY_TABLE" "$chain"; then
-		    _fwy_create_chain "$_FWY_TABLE" "$chain" || return 1
-		fi
-		_fwy_iptables "$_FWY_TABLE" "$_FWY_CHAIN" \
-		    -m state --state INVALID -j "$chain" || return 1
+		_fwy_chain_exists "$chain" || _fwy_create_chain "$chain" || return 1
+		_fwy_iptables -m state --state INVALID -j "$chain" || return 1
 		;;
 	    badi)
-		if ! _fwy_chain_exists "$_FWY_TABLE" "$chain"; then
-		    _fwy_create_chain "$_FWY_TABLE" "$chain" || return 1
-		fi
+		_fwy_chain_exists "$chain" || _fwy_create_chain "$chain" || return 1
 		local t
 		for t in ${UNSAFE_ICMP//,/ }; do
-		    _fwy_iptables "$_FWY_TABLE" "$_FWY_CHAIN" \
-			-p icmp --icmp-type "$t" -j "$chain" || return 1
+		    _fwy_iptables -p icmp --icmp-type "$t" -j "$chain" || return 1
 		done
 		;;
 	    sfld)
-		if ! _fwy_chain_exists "$_FWY_TABLE" "$chain"; then
-		    _fwy_create_chain "$_FWY_TABLE" "$chain" || return 1
-		    _fwy_iptables "$_FWY_TABLE" "$chain" \
-			-m limit --limit "${rate:-$FIREWALLY_SYNFLOOD_LIMIT}" \
+		if ! _fwy_chain_exists "$chain"; then
+		    _fwy_create_chain "$chain" || return 1
+		    _FWY_CHAIN="$chain" _fwy_iptables -m limit \
+			--limit "${rate:-$FIREWALLY_SYNFLOOD_LIMIT}" \
 			--limit-burst "$burst" -j RETURN || return 1
 		fi
-		_fwy_iptables "$_FWY_TABLE" "$_FWY_CHAIN" \
-		    -p tcp --syn -j "$chain" || return 1
+		_fwy_iptables -p tcp --syn -j "$chain" || return 1
 		;;
 	    ifld)
-		if ! _fwy_chain_exists "$_FWY_TABLE" "$chain"; then
-		    _fwy_create_chain "$_FWY_TABLE" "$chain" || return 1
-		    _fwy_iptables "$_FWY_TABLE" "$chain" \
-			-m limit --limit "${rate:-$FIREWALLY_ICMPFLOOD_LIMIT}" \
+		if ! _fwy_chain_exists "$chain"; then
+		    _fwy_create_chain "$chain" || return 1
+		    _FWY_CHAIN="$chain" _fwy_iptables -m limit \
+			--limit "${rate:-$FIREWALLY_ICMPFLOOD_LIMIT}" \
 			--limit-burst "$burst" -j RETURN || return 1
 		fi
-		_fwy_iptables "$_FWY_TABLE" "$_FWY_CHAIN" \
-		    -p icmp -j "$chain" || return 1
+		_fwy_iptables -p icmp -j "$chain" || return 1
 		;;
 	    unrt_s | unrt_d)
-		if ! _fwy_chain_exists "$_FWY_TABLE" unroutable; then
-		    _fwy_create_chain "$_FWY_TABLE" unroutable || return 1
-		fi
+		_fwy_chain_exists unroutable || _fwy_create_chain unroutable || return 1
 		local ip
 		for ip in ${UNROUTABLE_IPS//[,;]/ }; do
-		    _fwy_iptables "$_FWY_TABLE" "$_FWY_CHAIN" \
-			"-${prot#unrt_}" "$ip" -j unroutable || return 1
+		    _fwy_iptables "-${prot#unrt_}" "$ip" -j unroutable || return 1
 		done
 		;;
 	esac
@@ -1372,7 +1351,6 @@ from()
     _fwy_verbose "Processing rules from '$z1' to '$z2'"
     chain="${z1}_to_${z2}"
     _FWY_TABLE=filter
-    _FWY_CHAIN="$chain"
     case "$chain" in
 	any_to_* | *_to_any)
 	    _FWY_ZONES_INIT=1
@@ -1389,45 +1367,46 @@ from()
 	    return 1
 	    ;;
 	any_to_any)
-	    if ! _fwy_chain_exists filter any_to_any; then
+	    if ! _fwy_chain_exists any_to_any; then
 		local _FWY_RULES=$_FWY_RULES_ZONE_ANY1
-		_fwy_create_chain filter any_to_any || return 1
-		for chain in INPUT FORWARD OUTPUT; do
-		    _fwy_iptables filter $chain -j any_to_any || return 1
+		_fwy_create_chain any_to_any || return 1
+		for _FWY_CHAIN in INPUT FORWARD OUTPUT; do
+		    _fwy_iptables -j any_to_any || return 1
 		done
 	    fi
 	    ;;
 	any_to_fw | fw_to_any)
-	    if ! _fwy_chain_exists filter $chain; then
+	    if ! _fwy_chain_exists $chain; then
 		local _FWY_RULES=$_FWY_RULES_ZONE_ANY2
-		_fwy_create_chain filter $chain || return 1
+		_fwy_create_chain $chain || return 1
 		if [ "$chain" = any_to_fw ]; then
-		    _fwy_iptables filter INPUT -j $chain || return 1
+		    _FWY_CHAIN=INPUT
 		else
-		    _fwy_iptables filter OUTPUT -j $chain || return 1
+		    _FWY_CHAIN=OUTPUT
 		fi
+		_fwy_iptables -j $chain || return 1
 	    fi
 	    ;;
 	*_to_any)
-	    if ! _fwy_chain_exists filter $chain; then
+	    if ! _fwy_chain_exists $chain; then
 		local _FWY_RULES=$_FWY_RULES_ZONE_ANY2
-		_fwy_create_chain filter $chain || return 1
-		_fwy_iptables filter "${z1}_to_fw" -j $chain || return 1
-		_fwy_iptables filter "fwd_${z1}" -j $chain || return 1
+		_fwy_create_chain $chain || return 1
+		_FWY_CHAIN="${z1}_to_fw" _fwy_iptables -j $chain || return 1
+		_FWY_CHAIN="fwd_${z1}" _fwy_iptables -j $chain || return 1
 	    fi
 	    ;;
 	any_to_*)
-	    if ! _fwy_chain_exists filter $chain; then
+	    if ! _fwy_chain_exists $chain; then
 		local _FWY_RULES=$_FWY_RULES_ZONE_ANY2
-		_fwy_create_chain filter $chain || return 1
-		_fwy_iptables filter "fw_to_${z2}" -j $chain || return 1
-		for z in $_FWY_ZONES; do
-		    _fwy_iptables filter "${z}_to_${z2}" -j $chain || return 1
+		_fwy_create_chain $chain || return 1
+		for z in fw $_FWY_ZONES; do
+		    _FWY_CHAIN="${z}_to_${z2}" _fwy_iptables -j $chain || return 1
 		done
 	    fi
 	    ;;
     esac
 
+    _FWY_CHAIN="$chain"
     return 0
 }
 
