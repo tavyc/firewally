@@ -25,7 +25,7 @@ esac
 shopt -s extglob
 
 # Version
-FIREWALLY_VERSION='1.0'
+FIREWALLY_VERSION='1.1'
 FIREWALLY_REVISION='$Id$'
 _FWY_CONFIG_VERSION=1
 
@@ -236,6 +236,8 @@ _fwy_error()
 	[ -n "$_FWY_COMMAND" ] && echo >&2 "        in command: ${_FWY_COMMAND}"
 	[ -n "$_FWY_LINENO" ] && echo >&2 "            source: ${FIREWALLY_CONFIG}:${_FWY_LINENO}"
     fi
+    [ "$_FWY_MODE" != debug ] && ${_FWY_LOGGER_CMD} -t firewally -p local5.err \
+	"$@${_FWY_LINENO:+ at $FIREWALLY_CONFIG:$_FWY_LINENO}${_FWY_COMMAND:+ in command $_FWY_COMMAND}"
     if [ "$_FWY_MODE" != explain -a -z "$_FWY_USING_IPTABLES" ]; then
 	enable exit
 	exit 1
@@ -252,6 +254,7 @@ _fwy_fatal()
 	[ -n "$_FWY_COMMAND" ] && echo >&2 "        in command: ${_FWY_COMMAND}"
 	[ -n "$_FWY_LINENO" ] && echo >&2 "            source: ${FIREWALLY_CONFIG}:${_FWY_LINENO}"
     fi
+    ${_FWY_LOGGER_CMD} -t firewally -p local5.crit "$@${_FWY_LINENO:+ at $FIREWALLY_CONFIG:$_FWY_LINENO}${_FWY_COMMAND:+ in command $_FWY_COMMAND}"
     enable exit
     exit 2
 }
@@ -1853,6 +1856,7 @@ _fwy_find_cmd _FWY_IPTABLES_CMD iptables
 _fwy_find_cmd _FWY_IPTABLES_RESTORE_CMD iptables-restore
 _fwy_find_cmd _FWY_IPTABLES_SAVE_CMD iptables-save
 _fwy_find_cmd _FWY_LESS_CMD less
+_fwy_find_cmd _FWY_LOGGER_CMD logger
 _fwy_find_cmd _FWY_LSMOD_CMD lsmod
 _fwy_find_cmd _FWY_MKDIR_CMD mkdir
 _fwy_find_cmd _FWY_MKTEMP_CMD mktemp
@@ -1885,9 +1889,11 @@ case "$_FWY_MODE" in
 	    exit 0
 	fi
 	if _fwy_clear "" ACCEPT; then
+	    ${_FWY_LOGGER_CMD} -t firewally -p local5.info "Stopping firewall: ok"
 	    echo "done"
 	    exit 0
 	else
+	    ${_FWY_LOGGER_CMD} -t firewally -p local5.err "Stopping firewall: FAILED"
 	    echo "FAILED"
 	    exit 1
 	fi
@@ -1899,9 +1905,11 @@ case "$_FWY_MODE" in
 	# ensure the filter table is loaded
 	${_FWY_IPTABLES_CMD} -t filter -nvL INPUT >/dev/null
 	if _fwy_clear "" DROP "$SSH_CLIENT"; then
+	    ${_FWY_LOGGER_CMD} -t firewally -p local5.info "Blocking firewall${SSH_CLIENT:+, allowing access from $SSH_CLIENT}: ok"
 	    echo "done"
 	    exit 0
 	else
+	    ${_FWY_LOGGER_CMD} -t firewally -p local5.err "Blocking firewall${SSH_CLIENT:+, allowing access from $SSH_CLIENT}: ok"
 	    echo "FAILED"
 	    exit 1
 	fi
@@ -1987,6 +1995,7 @@ fi
 
 if [ "$_FWY_MODE" != debug ]; then
     echo -n "firewally: Starting firewall: "
+    ${_FWY_LOGGER_CMD} -t firewally -p local5.info "Starting firewall"
     [ -n "$_FWY_VERBOSE" ] && echo
 
     # Save old firewall
@@ -2026,6 +2035,7 @@ enable exit
 
 if [ -n "$FIREWALLY_UNCONFIGURED" ]; then
     if [ "$_FWY_MODE" = start ]; then
+	${_FWY_LOGGER_CMD} -t firewally -p local5.info "Starting firewall: not configured"
 	echo "not configured"
     else
 	_fwy_error "firewall is unconfigured"
@@ -2079,6 +2089,7 @@ if [ "$rc" -ne 0 ]; then
 	_fwy_warning "Activation failed with iptables-restore, but succeeded with iptables"
 fi
 if [ "$rc" -ne 0 ]; then
+    ${_FWY_LOGGER_CMD} -t firewally -p local5.err "Starting firewall: FAILED"
     echo "FAILED"
 
     echo -n "firewally: Restoring old firewall: "
@@ -2148,6 +2159,7 @@ if [ -f "${_FWY_TMP}/post" ]; then
 fi
 
 echo "done"
+${_FWY_LOGGER_CMD} -t firewally -p local5.info "Starting firewall: ok"
 
 if [ "$_FWY_MODE" = try ]; then
     # Ask whether to keep the firewall
@@ -2157,9 +2169,11 @@ if [ "$_FWY_MODE" = try ]; then
     if [ $ret -ne 0 -o "${REPLY}" != commit ]; then
 	echo -n "firewally: Restoring old firewall: "
 	if ${_FWY_IPTABLES_RESTORE_CMD} < "${_FWY_OLD_FW}"; then
+	    ${_FWY_LOGGER_CMD} -t firewally -p local5.info "Restoring old firewall: ok"
 	    echo "done"
 	    exit 0
 	else
+	    ${_FWY_LOGGER_CMD} -t firewally -p local5.info "Restoring old firewall: FAILED"
 	    echo "FAILED"
 	    exit 3
 	fi

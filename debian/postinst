@@ -2,7 +2,8 @@
 
 case "$1" in
 	configure)
-		update-rc.d firewally start 38 S . start 36 0 6 . > /dev/null
+		update-rc.d -f firewally remove >/dev/null 2>&1
+		update-rc.d firewally defaults 15 85 >/dev/null
 		;;
 
 	abort-upgrade|abort-remove|abort-deconfigure)
