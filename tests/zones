@@ -1,0 +1,370 @@
+TEST zones: validate names
+firewally
+zone hello!!
+EOF
+ERROR
+
+firewally:   ERROR: invalid zone name: 'hello!!'
+TEST zones: validate name lengths
+firewally
+zone helloooooooo
+EOF
+ERROR
+
+firewally:   ERROR: zone name too long: 'helloooooooo'
+TEST zones: validate special name any
+firewally
+zone any
+EOF
+ERROR
+
+firewally:   ERROR: zone 'any' is a built-in zone
+TEST zones: validate special name fw
+firewally
+zone fw
+EOF
+ERROR
+
+firewally:   ERROR: zone 'fw' is a built-in zone
+TEST zones: from validates zones
+firewally
+zone net eth0
+zone loc eth1
+
+from net to nowhere
+    accept
+EOF
+ERROR
+
+firewally:   ERROR: unknown 'to' zone: 'nowhere'
+TEST zones: from fw to fw
+firewally
+from fw to fw
+    accept
+EOF
+ERROR
+
+firewally:   ERROR: cannot filter from 'fw' to 'fw'
+TEST zones: simple
+firewally
+zone net eth0
+zone loc eth1
+EOF
+*filter
+:FORWARD -
+:INPUT -
+:OUTPUT -
+:fw_to_loc -
+:fw_to_net -
+:fwd_loc -
+:fwd_net -
+:loc_to_fw -
+:loc_to_loc -
+:loc_to_net -
+:net_to_fw -
+:net_to_loc -
+:net_to_net -
+-A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A FORWARD -i eth0 -j fwd_net
+-A FORWARD -i eth1 -j fwd_loc
+-A FORWARD -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: FORWARD DROP: " --log-level notice
+-A FORWARD -j DROP
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -i eth0 -j net_to_fw
+-A INPUT -i eth1 -j loc_to_fw
+-A INPUT -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT DROP: " --log-level notice
+-A INPUT -j DROP
+-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -o eth0 -j fw_to_net
+-A OUTPUT -o eth1 -j fw_to_loc
+-A OUTPUT -j ACCEPT
+-A fw_to_loc -j ACCEPT
+-A fw_to_net -j ACCEPT
+-A fwd_loc -o eth0 -j loc_to_net
+-A fwd_loc -o eth1 -j loc_to_loc
+-A fwd_loc -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: fwd_loc DROP: " --log-level notice
+-A fwd_loc -j DROP
+-A fwd_net -o eth0 -j net_to_net
+-A fwd_net -o eth1 -j net_to_loc
+-A fwd_net -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: fwd_net DROP: " --log-level notice
+-A fwd_net -j DROP
+-A loc_to_fw -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: loc_to_fw DROP: " --log-level notice
+-A loc_to_fw -j DROP
+-A loc_to_loc -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: loc_to_loc DROP: " --log-level notice
+-A loc_to_loc -j DROP
+-A loc_to_net -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: loc_to_net DROP: " --log-level notice
+-A loc_to_net -j DROP
+-A net_to_fw -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: net_to_fw DROP: " --log-level notice
+-A net_to_fw -j DROP
+-A net_to_loc -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: net_to_loc DROP: " --log-level notice
+-A net_to_loc -j DROP
+-A net_to_net -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: net_to_net DROP: " --log-level notice
+-A net_to_net -j DROP
+COMMIT
+TEST zones: simple, not stateful
+firewally
+FIREWALLY_STATEFUL=0
+zone net eth0
+zone loc eth1
+EOF
+*filter
+:FORWARD -
+:INPUT -
+:OUTPUT -
+:fw_to_loc -
+:fw_to_net -
+:fwd_loc -
+:fwd_net -
+:loc_to_fw -
+:loc_to_loc -
+:loc_to_net -
+:net_to_fw -
+:net_to_loc -
+:net_to_net -
+-A FORWARD -i eth0 -j fwd_net
+-A FORWARD -i eth1 -j fwd_loc
+-A FORWARD -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: FORWARD DROP: " --log-level notice
+-A FORWARD -j DROP
+-A INPUT -i lo -j ACCEPT
+-A INPUT -i eth0 -j net_to_fw
+-A INPUT -i eth1 -j loc_to_fw
+-A INPUT -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT DROP: " --log-level notice
+-A INPUT -j DROP
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -o eth0 -j fw_to_net
+-A OUTPUT -o eth1 -j fw_to_loc
+-A OUTPUT -j ACCEPT
+-A fw_to_loc -j ACCEPT
+-A fw_to_net -j ACCEPT
+-A fwd_loc -o eth0 -j loc_to_net
+-A fwd_loc -o eth1 -j loc_to_loc
+-A fwd_loc -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: fwd_loc DROP: " --log-level notice
+-A fwd_loc -j DROP
+-A fwd_net -o eth0 -j net_to_net
+-A fwd_net -o eth1 -j net_to_loc
+-A fwd_net -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: fwd_net DROP: " --log-level notice
+-A fwd_net -j DROP
+-A loc_to_fw -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: loc_to_fw DROP: " --log-level notice
+-A loc_to_fw -j DROP
+-A loc_to_loc -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: loc_to_loc DROP: " --log-level notice
+-A loc_to_loc -j DROP
+-A loc_to_net -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: loc_to_net DROP: " --log-level notice
+-A loc_to_net -j DROP
+-A net_to_fw -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: net_to_fw DROP: " --log-level notice
+-A net_to_fw -j DROP
+-A net_to_loc -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: net_to_loc DROP: " --log-level notice
+-A net_to_loc -j DROP
+-A net_to_net -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: net_to_net DROP: " --log-level notice
+-A net_to_net -j DROP
+COMMIT
+TEST zones: complex
+firewally
+FIREWALLY_USE_MPORT=0
+zone net  eth0
+zone loc1 eth1:192.168.1.0/24,192.168.2.0/24
+zone loc2 eth1
+zone loc3 eth2
+from net to fw
+    accept service icmp,ssh
+from loc1 to fw
+    accept service icmp,ssh,vnc
+from any to net
+    accept
+EOF
+*filter
+:FORWARD -
+:INPUT -
+:OUTPUT -
+:any_to_net -
+:fw_to_loc1 -
+:fw_to_loc2 -
+:fw_to_loc3 -
+:fw_to_net -
+:fwd_loc1 -
+:fwd_loc2 -
+:fwd_loc3 -
+:fwd_net -
+:loc1_to_fw -
+:loc1_to_loc1 -
+:loc1_to_loc2 -
+:loc1_to_loc3 -
+:loc1_to_net -
+:loc2_to_fw -
+:loc2_to_loc1 -
+:loc2_to_loc2 -
+:loc2_to_loc3 -
+:loc2_to_net -
+:loc3_to_fw -
+:loc3_to_loc1 -
+:loc3_to_loc2 -
+:loc3_to_loc3 -
+:loc3_to_net -
+:net_to_fw -
+:net_to_loc1 -
+:net_to_loc2 -
+:net_to_loc3 -
+:net_to_net -
+-A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A FORWARD -i eth0 -j fwd_net
+-A FORWARD -i eth1 -s 192.168.1.0/24 -j fwd_loc1
+-A FORWARD -i eth1 -s 192.168.2.0/24 -j fwd_loc1
+-A FORWARD -i eth1 -j fwd_loc2
+-A FORWARD -i eth2 -j fwd_loc3
+-A FORWARD -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: FORWARD DROP: " --log-level notice
+-A FORWARD -j DROP
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -i eth0 -j net_to_fw
+-A INPUT -i eth1 -s 192.168.1.0/24 -j loc1_to_fw
+-A INPUT -i eth1 -s 192.168.2.0/24 -j loc1_to_fw
+-A INPUT -i eth1 -j loc2_to_fw
+-A INPUT -i eth2 -j loc3_to_fw
+-A INPUT -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT DROP: " --log-level notice
+-A INPUT -j DROP
+-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -o eth0 -j fw_to_net
+-A OUTPUT -o eth1 -d 192.168.1.0/24 -j fw_to_loc1
+-A OUTPUT -o eth1 -d 192.168.2.0/24 -j fw_to_loc1
+-A OUTPUT -o eth1 -j fw_to_loc2
+-A OUTPUT -o eth2 -j fw_to_loc3
+-A OUTPUT -j ACCEPT
+-A any_to_net -j ACCEPT
+-A fw_to_loc1 -j ACCEPT
+-A fw_to_loc2 -j ACCEPT
+-A fw_to_loc3 -j ACCEPT
+-A fw_to_net -j any_to_net
+-A fw_to_net -j ACCEPT
+-A fwd_loc1 -o eth0 -j loc1_to_net
+-A fwd_loc1 -o eth1 -d 192.168.1.0/24 -j loc1_to_loc1
+-A fwd_loc1 -o eth1 -d 192.168.2.0/24 -j loc1_to_loc1
+-A fwd_loc1 -o eth1 -j loc1_to_loc2
+-A fwd_loc1 -o eth2 -j loc1_to_loc3
+-A fwd_loc1 -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: fwd_loc1 DROP: " --log-level notice
+-A fwd_loc1 -j DROP
+-A fwd_loc2 -o eth0 -j loc2_to_net
+-A fwd_loc2 -o eth1 -d 192.168.1.0/24 -j loc2_to_loc1
+-A fwd_loc2 -o eth1 -d 192.168.2.0/24 -j loc2_to_loc1
+-A fwd_loc2 -o eth1 -j loc2_to_loc2
+-A fwd_loc2 -o eth2 -j loc2_to_loc3
+-A fwd_loc2 -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: fwd_loc2 DROP: " --log-level notice
+-A fwd_loc2 -j DROP
+-A fwd_loc3 -o eth0 -j loc3_to_net
+-A fwd_loc3 -o eth1 -d 192.168.1.0/24 -j loc3_to_loc1
+-A fwd_loc3 -o eth1 -d 192.168.2.0/24 -j loc3_to_loc1
+-A fwd_loc3 -o eth1 -j loc3_to_loc2
+-A fwd_loc3 -o eth2 -j loc3_to_loc3
+-A fwd_loc3 -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: fwd_loc3 DROP: " --log-level notice
+-A fwd_loc3 -j DROP
+-A fwd_net -o eth0 -j net_to_net
+-A fwd_net -o eth1 -d 192.168.1.0/24 -j net_to_loc1
+-A fwd_net -o eth1 -d 192.168.2.0/24 -j net_to_loc1
+-A fwd_net -o eth1 -j net_to_loc2
+-A fwd_net -o eth2 -j net_to_loc3
+-A fwd_net -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: fwd_net DROP: " --log-level notice
+-A fwd_net -j DROP
+-A loc1_to_fw -p tcp --dport ssh -j ACCEPT
+-A loc1_to_fw -p tcp --dport 5900:5903 -j ACCEPT
+-A loc1_to_fw -p icmp -j ACCEPT
+-A loc1_to_fw -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: loc1_to_fw DROP: " --log-level notice
+-A loc1_to_fw -j DROP
+-A loc1_to_loc1 -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: loc1_to_loc1 DROP: " --log-level notice
+-A loc1_to_loc1 -j DROP
+-A loc1_to_loc2 -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: loc1_to_loc2 DROP: " --log-level notice
+-A loc1_to_loc2 -j DROP
+-A loc1_to_loc3 -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: loc1_to_loc3 DROP: " --log-level notice
+-A loc1_to_loc3 -j DROP
+-A loc1_to_net -j any_to_net
+-A loc1_to_net -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: loc1_to_net DROP: " --log-level notice
+-A loc1_to_net -j DROP
+-A loc2_to_fw -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: loc2_to_fw DROP: " --log-level notice
+-A loc2_to_fw -j DROP
+-A loc2_to_loc1 -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: loc2_to_loc1 DROP: " --log-level notice
+-A loc2_to_loc1 -j DROP
+-A loc2_to_loc2 -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: loc2_to_loc2 DROP: " --log-level notice
+-A loc2_to_loc2 -j DROP
+-A loc2_to_loc3 -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: loc2_to_loc3 DROP: " --log-level notice
+-A loc2_to_loc3 -j DROP
+-A loc2_to_net -j any_to_net
+-A loc2_to_net -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: loc2_to_net DROP: " --log-level notice
+-A loc2_to_net -j DROP
+-A loc3_to_fw -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: loc3_to_fw DROP: " --log-level notice
+-A loc3_to_fw -j DROP
+-A loc3_to_loc1 -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: loc3_to_loc1 DROP: " --log-level notice
+-A loc3_to_loc1 -j DROP
+-A loc3_to_loc2 -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: loc3_to_loc2 DROP: " --log-level notice
+-A loc3_to_loc2 -j DROP
+-A loc3_to_loc3 -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: loc3_to_loc3 DROP: " --log-level notice
+-A loc3_to_loc3 -j DROP
+-A loc3_to_net -j any_to_net
+-A loc3_to_net -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: loc3_to_net DROP: " --log-level notice
+-A loc3_to_net -j DROP
+-A net_to_fw -p tcp --dport ssh -j ACCEPT
+-A net_to_fw -p icmp -j ACCEPT
+-A net_to_fw -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: net_to_fw DROP: " --log-level notice
+-A net_to_fw -j DROP
+-A net_to_loc1 -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: net_to_loc1 DROP: " --log-level notice
+-A net_to_loc1 -j DROP
+-A net_to_loc2 -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: net_to_loc2 DROP: " --log-level notice
+-A net_to_loc2 -j DROP
+-A net_to_loc3 -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: net_to_loc3 DROP: " --log-level notice
+-A net_to_loc3 -j DROP
+-A net_to_net -j any_to_net
+-A net_to_net -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: net_to_net DROP: " --log-level notice
+-A net_to_net -j DROP
+COMMIT
+TEST zones: follow standard policies
+firewally
+FIREWALLY_filter_INPUT_POLICY="reject"
+FIREWALLY_filter_FORWARD_POLICY="drop"
+FIREWALLY_filter_OUTPUT_POLICY="accept"
+zone net eth0
+zone loc eth1
+EOF
+*filter
+:FORWARD -
+:INPUT -
+:OUTPUT -
+:fw_to_loc -
+:fw_to_net -
+:fwd_loc -
+:fwd_net -
+:loc_to_fw -
+:loc_to_loc -
+:loc_to_net -
+:net_to_fw -
+:net_to_loc -
+:net_to_net -
+-A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A FORWARD -i eth0 -j fwd_net
+-A FORWARD -i eth1 -j fwd_loc
+-A FORWARD -j DROP
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -i eth0 -j net_to_fw
+-A INPUT -i eth1 -j loc_to_fw
+-A INPUT -j REJECT
+-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -o eth0 -j fw_to_net
+-A OUTPUT -o eth1 -j fw_to_loc
+-A OUTPUT -j ACCEPT
+-A fw_to_loc -j ACCEPT
+-A fw_to_net -j ACCEPT
+-A fwd_loc -o eth0 -j loc_to_net
+-A fwd_loc -o eth1 -j loc_to_loc
+-A fwd_loc -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: fwd_loc DROP: " --log-level notice
+-A fwd_loc -j DROP
+-A fwd_net -o eth0 -j net_to_net
+-A fwd_net -o eth1 -j net_to_loc
+-A fwd_net -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: fwd_net DROP: " --log-level notice
+-A fwd_net -j DROP
+-A loc_to_fw -j REJECT
+-A loc_to_loc -j DROP
+-A loc_to_net -j DROP
+-A net_to_fw -j REJECT
+-A net_to_loc -j DROP
+-A net_to_net -j DROP
+COMMIT

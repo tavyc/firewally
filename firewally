@@ -1,7 +1,7 @@
 #!/bin/bash
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 # File:	       firewally
-# Description: FireWally: Eazy, Advanced Zone-Based Firewall
+# Description: FireWally: Easy, Advanced Zone-Based Firewall
 #
 # Copyright:   Copyright (C) 2004 yLabs
 # Part of:     firewally
@@ -25,7 +25,7 @@ esac
 shopt -s extglob
 
 # Version
-FIREWALLY_VERSION='0.2'
+FIREWALLY_VERSION='0.3'
 FIREWALLY_REVISION='$Id$'
 _FWY_CONFIG_VERSION=1
 
@@ -36,6 +36,7 @@ _FWY_CONFIG_VERSION=1
 FIREWALLY_STATEFUL=1
 FIREWALLY_ROUTING=1
 FIREWALLY_MODULES="all"
+FIREWALLY_UNCONFIGURED=
 
 # Default policies
 FIREWALLY_filter_INPUT_POLICY="drop loglimit"
@@ -76,6 +77,7 @@ _FWY_USING_IPTABLES=
 _FWY_COMMAND=
 _FWY_TABLE=filter
 _FWY_CHAIN=INPUT
+_FWY_DYN_CHAIN=1
 _FWY_RULES_INIT=1
 _FWY_RULES_MAC=2
 _FWY_RULES_ZONE_ANY1=3
@@ -114,7 +116,7 @@ service_halflife="udp/27010:27020"
 service_heartbeat="udp/690:699"
 service_heretic2="udp/28910"
 service_hexen2="udp/26900"
-service_icmp="icmp/"
+service_icmp="icmp/any"
 service_icp="udp/3130"
 service_icq="tcp/5190:5193 udp/4000"
 service_ident="tcp/113"
@@ -218,8 +220,10 @@ _fwy_warning()
 {
     echo >&2
     echo >&2 "firewally: Warning: $@"
-    [ -n "$_FWY_COMMAND" ] && echo >&2 "        in command: ${_FWY_COMMAND}"
-    [ -n "$_FWY_LINENO" ] && echo >&2 "            source: ${FIREWALLY_CONFIG}:${_FWY_LINENO}"
+    if [ -z "$FIREWALLY_SIMPLE_ERRORS" ]; then
+	[ -n "$_FWY_COMMAND" ] && echo >&2 "        in command: ${_FWY_COMMAND}"
+	[ -n "$_FWY_LINENO" ] && echo >&2 "            source: ${FIREWALLY_CONFIG}:${_FWY_LINENO}"
+    fi
     return 0
 }
 
@@ -228,8 +232,10 @@ _fwy_error()
 {
     echo >&2
     echo >&2 "firewally:   ERROR: $@"
-    [ -n "$_FWY_COMMAND" ] && echo >&2 "        in command: ${_FWY_COMMAND}"
-    [ -n "$_FWY_LINENO" ] && echo >&2 "            source: ${FIREWALLY_CONFIG}:${_FWY_LINENO}"
+    if [ -z "$FIREWALLY_SIMPLE_ERRORS" ]; then
+	[ -n "$_FWY_COMMAND" ] && echo >&2 "        in command: ${_FWY_COMMAND}"
+	[ -n "$_FWY_LINENO" ] && echo >&2 "            source: ${FIREWALLY_CONFIG}:${_FWY_LINENO}"
+    fi
     if [ "$_FWY_MODE" != explain -a -z "$_FWY_USING_IPTABLES" ]; then
 	enable exit
 	exit 1
@@ -242,8 +248,10 @@ _fwy_fatal()
 {
     echo >&2
     echo >&2 "firewally:   FATAL: $@"
-    [ -n "$_FWY_COMMAND" ] && echo >&2 "        in command: ${_FWY_COMMAND}"
-    [ -n "$_FWY_LINENO" ] && echo >&2 "            source: ${FIREWALLY_CONFIG}:${_FWY_LINENO}"
+    if [ -z "$FIREWALLY_SIMPLE_ERRORS" ]; then
+	[ -n "$_FWY_COMMAND" ] && echo >&2 "        in command: ${_FWY_COMMAND}"
+	[ -n "$_FWY_LINENO" ] && echo >&2 "            source: ${FIREWALLY_CONFIG}:${_FWY_LINENO}"
+    fi
     enable exit
     exit 2
 }
@@ -316,6 +324,8 @@ _fwy_create_chain()
 	[ -f "${_FWY_TMP}/fw/$_FWY_TABLE/$chain/r${_FWY_RULES_POLICY}" ] && _fwy_fatal "policy already defined?"
 	local _FWY_CHAIN="$chain" _FWY_RULES=$_FWY_RULES_POLICY
 	_fwy_rule ${!policyvar} || return 1
+    else
+	${_FWY_TOUCH_CMD} "${_FWY_TMP}/fw/$_FWY_TABLE/$chain/r${_FWY_RULES_POLICY}"
     fi
     return 0
 }
@@ -475,24 +485,25 @@ _fwy_rule()
 {
     # Variables
     local arg var val svc base_cmd
-    local iface=any aiface iface_arg
-    local oface=any aoface oface_arg
-    local src=any asrc src_arg
-    local dst=any adst dst_arg
-    local proto=any aproto proto_arg
-    local srcport=any asrcport srcport_arg
-    local dstport=any adstport dstport_arg
-    local icmptype=any aicmptype icmptype_arg
-    local mac=any amac mac_arg
-    local mark=any amark mark_arg
-    local dscp=any adscp dscp_arg
-    local tos=any atos tos_arg
+    local iface=any ifacenot aiface iface_arg
+    local oface=any ofacenot aoface oface_arg
+    local src=any srcnot asrc src_arg
+    local dst=any dstnot adst dst_arg
+    local proto=any protonot aproto proto_arg
+    local srcport=any srcportnot asrcport srcport_arg
+    local dstport=any dstportnot adstport dstport_arg
+    local icmptype=any icmptypenot aicmptype icmptype_arg
+    local mac=any macnot amac mac_arg
+    local mark=any marknot amark mark_arg
+    local dscp=any dscpnot adscp dscp_arg
+    local tos=any tosnot atos tos_arg
     local state=any state_arg
-    local service=any aservice
+    local service=any servicenot aservice services=any
     local limit limit_burst limit_arg
     local match
     local log log_match log_args
     local action action_args action_is_chain
+    local -a args ports
 
     # Parse arguments
     while [ $# -gt 0 ]; do
@@ -514,12 +525,28 @@ _fwy_rule()
 		arg=proto
 		;;
 	    srcport | sport | source-port)
+		case "$protonot$proto" in
+		    tcp | udp | "tcp udp" | "udp tcp") ;;
+		    *) _fwy_error "parameter '$1' is incompatible with proto '${protonot:+not }$proto'"
+		       return 1
+		       ;;
+		esac
 		arg=srcport
 		;;
 	    dstport | dport| destination-port)
+		case "$protonot$proto" in
+		    tcp | udp | "tcp udp" | "udp tcp") ;;
+		    *) _fwy_error "parameter '$1' is incompatible with proto '${protonot:+not }$proto'"
+		       return 1;;
+		esac
 		arg=dstport
 		;;
 	    icmptype | icmp-type)
+		case "$protonot$proto" in
+		    icmp) ;;
+		    *) _fwy_error "parameter '$1' is incompatible with proto '${protonot:+not }$proto'"
+		       return 1;;
+		esac
 		arg=icmptype
 		;;
 	    service | svc)
@@ -527,32 +554,41 @@ _fwy_rule()
 		[ "$proto" != any ] && _fwy_warning "overriding parameter: service overrides proto '$proto'"
 		[ "$dstport" != any ] && _fwy_warning "overriding parameter: service overrides dstport '$dstport'"
 		[ "$dstport" != any ] && _fwy_warning "overriding parameter: service overrides icmptype '$icmptype'"
-		service=
-		for aservice in ${2//[,;]/ }; do
+		if [ "$2" = not ]; then
+		    servicenot=1
+		    shift
+		fi
+		service="${2//[,;]/ }"
+		local svc_tcp svc_udp svc_icmp svc_other
+		for aservice in $service; do
 		    var="service_${aservice//-/_}"
 		    svc="${!var}"
 		    [ -z "$svc" ] && svc="$aservice"
 		    for val in $svc; do
 			case "$val" in
-			    */*) service="$service $val";;
-			    *) service="$service tcp/$val";;
+			    tcp/* | TCP/*) svc_tcp="${svc_tcp},${val#*/}";;
+			    udp/* | UDP/*) svc_udp="${svc_udp},${val#*/}";;
+			    icmp/* | ICMP/*) svc_icmp="${svc_icmp},${val#*/}";;
+			    */*) svc_other="${svc_other} $val";;
+			    *) svc_tcp="${svc_tcp},$val";;
 			esac
 		    done
 		done
-		shift 2 || shift
+		services="${svc_tcp:+tcp/$svc_tcp} ${svc_udp:+udp/$svc_udp} ${svc_icmp:+icmp/$svc_icmp} $svc_other"
+		shift
 		;;
 	    state)
 		[ "$state" != any ] && _fwy_warning "overriding parameter: state '$state' becomes '$2'"
 		state="$2"
-		shift 2 || shift
+		shift
 		;;
 	    limit)
 		[ -n "$limit" ] && _fwy_warning "overriding parameter: limit '$limit' becomes '$2'"
 		limit="$2"
-		shift 2 || shift
+		shift
 		if [ "$1" = burst ]; then
 		    limit_burst="$2"
-		    shift 2 || shift
+		    shift
 		fi
 		;;
 	    mac | mark | dscp | tos)
@@ -560,16 +596,16 @@ _fwy_rule()
 		;;
 	    match)
 		match="$match $2"
-		shift 2 || shift
+		shift
 		;;
 	    log | loglimit | log-limit)
 		local log_arg="$1" text="$2" log_text= log_level=
 		local table="$_FWY_TABLE" chain="$_FWY_CHAIN"
 
-		shift 2 || shift
+		shift
 		if [ "$1" = level ]; then
 		    log_level="$2"
-		    shift 2 || shift
+		    shift
 		fi
 		case "$text" in
 		    *[\"\\]*)
@@ -578,18 +614,21 @@ _fwy_rule()
 			;;
 		esac
 		[ "$action" = LOG -o -n "$log" ] && _fwy_warning "ignoring parameter: '$log_arg'" && continue
+		# Set log_text
 		eval "log_text=\"${FIREWALLY_LOG_TEXT}\""
 		if [ "${#log_text}" -gt 29 ]; then
 		    eval "log_text=\"${FIREWALLY_LOG_TEXT_TRUNC}\""
 		    [ "${#log_text}" -gt 29 ] && log_text="${log_text:1:29}"
 		fi
 		if [ -n "$action" ]; then
+		    # as logging option
 		    log="LOG"
 		    log_match=
 		    [ "$log_arg" != log ] && \
 			log_match="-m limit --limit $FIREWALLY_LOG_FREQUENCY --limit-burst $FIREWALLY_LOG_BURST"
 		    log_args="--log-prefix \"$log_text\" --log-level ${log_level:-${FIREWALLY_LOG_LEVEL}} $FIREWALLY_LOG_OPTIONS"
 		else
+		    # as action
 		    action="LOG"
 		    action_args="--log-prefix \"$log_text\" --log-level ${log_level:-${FIREWALLY_LOG_LEVEL}} $FIREWALLY_LOG_OPTIONS"
 		    log=
@@ -605,31 +644,31 @@ _fwy_rule()
 	    accept)
 		[ -n "$action" ] && _fwy_warning "overriding parameter: action '$action' becomes '$1'"
 		action=ACCEPT
-		shift
 		;;
 	    drop)
 		[ -n "$action" ] && _fwy_warning "overriding parameter: action '$action' becomes '$1'"
 		action=DROP
-		shift
 		;;
 	    return | ret)
 		[ -n "$action" ] && _fwy_warning "overriding parameter: action '$action' becomes '$1'"
 		action=RETURN
-		shift
 		;;
 	    jump | goto)
 		[ -n "$action" ] && _fwy_warning "overriding parameter: action '$action' becomes '$1'"
 		[ "$2" = to ] && shift
+		if [ -n "$2" ]; then
+		    _fwy_valid_name chain "$2" 20 || return 1
+		fi
 		action="$2" action_is_chain=1
-		shift 2 || shift
+		shift
 		;;
 	    reject)
 		[ -n "$action" ] && _fwy_warning "overriding parameter: action '$action' becomes '$1'"
 		action=REJECT
-		shift
-		if [ "$1" = with ]; then
+		if [ "$2" = with ]; then
+		    shift
 		    [ -n "$2" ] && action_args="--reject-with $2"
-		    shift 2 || shift
+		    shift
 		fi
 		;;
 	    snat)
@@ -641,7 +680,7 @@ _fwy_rule()
 			action_args="$action_args --to-source $v"
 		    done
 		fi
-		shift 2 || shift
+		shift
 		;;
 	    dnat)
 		[ -n "$action" ] && _fwy_warning "overriding parameter: action '$action' becomes '$1'"
@@ -652,19 +691,18 @@ _fwy_rule()
 			action_args="$action_args --to-destination $v"
 		    done
 		fi
-		shift 2 || shift
+		shift
 		;;
 	    masq | masquerade)
 		[ -n "$action" ] && _fwy_warning "overriding parameter: action '$action' becomes '$1'"
 		action=MASQUERADE
-		shift
 		;;
 	    redirect)
 		[ -n "$action" ] && _fwy_warning "overriding parameter: action '$action' becomes '$1'"
 		action=REDIRECT
 		[ "$2" = to ] && shift
 		[ -n "$2" ] && action_args="--to-ports $2"
-		shift 2 || shift
+		shift
 		;;
 	    setmark)
 		[ -n "$action" ] && _fwy_warning "overriding parameter: action '$action' becomes '$1'"
@@ -672,7 +710,7 @@ _fwy_rule()
 		    action=MARK
 		    action_args="--set-mark $2"
 		fi
-		shift 2 || shift
+		shift
 		;;
 	    settos)
 		[ -n "$action" ] && _fwy_warning "overriding parameter: action '$action' becomes '$1'"
@@ -680,7 +718,7 @@ _fwy_rule()
 		    action=TOS
 		    action_args="--set-tos $2"
 		fi
-		shift 2 || shift
+		shift
 		;;
 	    setdscp)
 		[ -n "$action" ] && _fwy_warning "overriding parameter: action '$action' becomes '$1'"
@@ -688,7 +726,7 @@ _fwy_rule()
 		    action=DSCP
 		    action_args="--set-dscp $2"
 		fi
-		shift 2 || shift
+		shift
 		;;
 	    imq)
 		[ -n "$action" ] && _fwy_warning "overriding parameter: action '$action' becomes '$1'"
@@ -698,6 +736,7 @@ _fwy_rule()
 			action=IMQ
 			action_args="--to-dev $2"
 		    fi
+		    shift
 		else
 		    action=IMQ
 		fi
@@ -706,11 +745,11 @@ _fwy_rule()
 	    target)
 		[ -n "$action" ] && _fwy_warning "overriding parameter: action '$action' becomes '$2'"
 		if [ -n "$2" ]; then
-		    local -a args=($2)
+		    args=($2)
 		    action="${args[0]}"
-		    action_args=("${args[@]:1}")
+		    action_args="${args[*]:1}"
 		fi
-		shift 2 || shift
+		shift
 		;;
 	    *)
 		_fwy_error "unknown argument '$1'"
@@ -718,11 +757,23 @@ _fwy_rule()
 		;;
 	esac
 	if [ -n "$arg" ]; then
-	    val="${2//[,;]/ }"
+	    if [ "$2" = not ]; then
+		shift
+		args=(${2//[,;]/ })
+		if [ "${#args[@]}" -eq 1 ]; then
+		    val="!${args[0]}"
+		else
+		    val="${args[*]}"
+		    eval "${arg}not=1"
+		fi
+	    else
+		val="${2//[,;]/ }"
+	    fi
 	    [ "${!arg}" != any ] && _fwy_warning "overriding parameter: $arg '${!arg}' becomes '$val'"
 	    eval "$arg=\"\$val\""
-	    shift 2 || shift
+	    shift
 	fi
+	shift
     done
 
     # Done if no action
@@ -740,6 +791,210 @@ _fwy_rule()
     if [ -n "${_FWY_LINENO}" ]; then
 	echo -e "#\n# source: ${FIREWALLY_CONFIG}:${_FWY_LINENO}\n# $_FWY_COMMAND" \
 	    >> "${_FWY_TMP}/fw/$_FWY_TABLE/$_FWY_CHAIN/r$_FWY_RULES"
+    fi
+
+    # Replace srcport with mport if appropriate
+    if [ "${FIREWALLY_USE_MPORT:-0}" != 0 -a "$srcport" != any ]; then
+	ports=($srcport)
+	if [ "${#ports[@]}" -gt 1 ]; then
+	    srcport=""
+	    while [ "${#ports[@]}" -gt 1 ]; do
+		val="${ports[@]:0:7}"
+		srcport="$srcport __mport__:${val// /,}"
+		ports=("${ports[@]:7}")
+	    done
+	    srcport="$srcport ${ports[@]}"
+	fi
+    fi
+    if [ "${FIREWALLY_USE_MPORT:-0}" != 0 -a "$dstport" != any ]; then
+	ports=($dstport)
+	if [ "${#ports[@]}" -gt 1 ]; then
+	    dstport=""
+	    while [ "${#ports[@]}" -gt 1 ]; do
+		val="${ports[@]:0:7}"
+		dstport="$dstport __mport__:${val// /,}"
+		ports=("${ports[@]:7}")
+	    done
+	    dstport="$dstport ${ports[@]}"
+	fi
+    fi
+
+    # Expand negative rules
+    if [ -n "$ifacenot$ofacenot$srcnot$protonot$srcportnot$dstportnot$icmptypenot$macnot$marknot$dscpnot$tosnot$servicenot" ]; then
+	local oldchain="$_FWY_CHAIN"
+	local _FWY_CHAIN
+
+	# create dynamic chain
+	while _fwy_chain_exists "${oldchain}_${_FWY_DYN_CHAIN}"; do
+	    _FWY_DYN_CHAIN=$[_FWY_DYN_CHAIN + 1]
+	done
+	_FWY_CHAIN="${oldchain}_${_FWY_DYN_CHAIN}"
+	_FWY_DYN_CHAIN=$[_FWY_DYN_CHAIN + 1]
+	_fwy_create_chain "$_FWY_CHAIN" || return 1
+
+	if [ -n "$ifacenot" ]; then
+	    for aiface in $iface; do
+		_fwy_iptables -i "$aiface" -j RETURN || return 1
+	    done
+	    iface=any
+	fi
+	if [ -n "$ofacenot" ]; then
+	    for aoface in $oface; do
+		_fwy_iptables -o "$aoface" -j RETURN || return 1
+	    done
+	    oface=any
+	fi
+	if [ -n "$srcnot" ]; then
+	    for asrc in $src; do
+		_fwy_iptables -s "$asrc" -j RETURN || return 1
+	    done
+	    src=any
+	fi
+	if [ -n "$dstnot" ]; then
+	    for adst in $dst; do
+		_fwy_iptables -s "$adst" -j RETURN || return 1
+	    done
+	    dst=any
+	fi
+	if [ -n "$srcportnot" ]; then
+	    for aproto in $proto; do
+		for asrcport in $srcport; do
+		    case "$asrcport" in
+			__mport__:*)
+			    _fwy_iptables -p "$aproto" -m mport --sports "${asrcport#__mport__:}" -j RETURN || return 1
+			    ;;
+			*)
+			    _fwy_iptables -p "$aproto" --srcport "$asrcport" -j RETURN || return 1
+			    ;;
+		    esac
+		done
+	    done
+	    srcport=any
+	fi
+	if [ -n "$dstportnot" ]; then
+	    for aproto in $proto; do
+		for adstport in $dstport; do
+		    case "$adstport" in
+			__mport__:*)
+			    _fwy_iptables -p "$aproto" -m mport --dports "${adstport#__mport__:}" -j RETURN || return 1
+			    ;;
+			*)
+			    _fwy_iptables -p "$aproto" --dstport "$adstport" -j RETURN || return 1
+			    ;;
+		    esac
+		done
+	    done
+	    dstport=any
+	fi
+	if [ -n "$icmptypenot" ]; then
+	    for aicmptype in $icmptype; do
+		_fwy_iptables -p icmp --icmp-type "$aicmptype" RETURN || return 1
+	    done
+	    icmptype=any
+	fi
+	if [ -n "$protonot" ]; then
+	    for aproto in $proto; do
+		_fwy_iptables -p "$aproto" -j RETURN || return 1
+	    done
+	    proto=any
+	fi
+	if [ -n "$servicenot" ]; then
+	    local dp
+	    for aservice in $services; do
+		case "$aservice" in
+		    any)
+			;;
+		    tcp/* | udp/*)
+			dp="${aservice#*/}"
+			dp="${dp//[,;]/ }"
+			dp="${dp:-any}"
+			if [ "${FIREWALLY_USE_MPORT:-0}" != 0 -a "$dp" != any ]; then
+			    ports=($dp)
+			    if [ "${#ports[@]}" -gt 1 ]; then
+				dp=""
+				while [ "${#ports[@]}" -gt 1 ]; do
+				    val="${ports[@]:0:7}"
+				    dp="$dp __mport__:${val// /,}"
+				    ports=("${ports[@]:7}")
+				done
+				dp="$dp ${ports[@]}"
+			    fi
+			fi
+			for adstport in $dp; do
+			    case "$adstport" in
+				any)
+				    _fwy_iptables -p "${aservice%%/*}" -j RETURN || return 1
+				    ;;
+				__mport__:*)
+				    _fwy_iptables -p "${aservice%%/*}" -m mport \
+					--dports "${adstport#__mport__:}" -j RETURN || return 1
+				    ;;
+			       *)
+				    _fwy_iptables -p "${aservice%%/*}" --dstport "$adstport" -j RETURN || return 1
+				    ;;
+		            esac
+			done
+			;;
+		    icmp/*)
+			dp="${aservice#*/}"
+			dp="${dp//[,;]/ }"
+			dp="${dp:-any}"
+			for aicmptype in $dp; do
+			    case "$aicmptype" in
+				any)
+				    _fwy_iptables -p icmp -j RETURN || return 1
+				    ;;
+				*)
+				    _fwy_iptables -p icmp --icmp-type "$aicmptype" -j RETURN || return 1
+				    ;;
+			    esac
+			done
+			;;
+		    *)
+			_fwy_iptables -p "${aservice%%/*}" -j RETURN || return 1
+			;;
+		esac
+	    done
+	    services=any
+	    proto=any
+	fi
+	if [ -n "$macnot" ]; then
+	    for amac in $mac; do
+		_fwy_iptables -m mac --mac-source "$amac" -j RETURN || return 1
+	    done
+	    mac=any
+	fi
+	if [ -n "$marknot" ]; then
+	    for amark in $mark; do
+		_fwy_iptables -m mark --mark "$amark" -j RETURN || return 1
+	    done
+	    mark=any
+	fi
+	if [ -n "$dscpnot" ]; then
+	    for adscp in $dscp; do
+		_fwy_iptables -m dscp --dscp "$adscp" -j RETURN || return 1
+	    done
+	    dscp=any
+	fi
+	if [ -n "$tosnot" ]; then
+	    for atos in $tos; do
+		_fwy_iptables -m tos --tos "$atos" -j RETURN || return 1
+	    done
+	    tos=any
+	fi
+
+	if [ -n "$log" ]; then
+	    # create logging rule
+	    _fwy_iptables $log_match -j "$log" $log_args || return 1
+	    log=
+	fi
+
+	# create rule
+	# @@@ reject-with tcp-reset?
+	_fwy_iptables -j "$action" $action_args || return 1
+
+	action="$_FWY_CHAIN" action_args= action_is_chain=1
+	_FWY_CHAIN="$oldchain"
     fi
 
     # Expand rules
@@ -771,18 +1026,30 @@ _fwy_rule()
 			*)   dst_arg="-d $adst";;
 		    esac
 
-		    for aservice in $service; do
+		    for aservice in $services; do
 			case "$aservice" in
 			    any)
 				;;
-			    tcp/* | udp/* | TCP/* | UDP/*)
+			    tcp/* | udp/*)
 				proto="${aservice%%/*}"
 				dstport="${aservice#*/}"
 				dstport="${dstport//[,;]/ }"
 				dstport="${dstport:-any}"
 				icmptype=any
+				if [ "${FIREWALLY_USE_MPORT:-0}" != 0 -a "$dstport" != any ]; then
+				    ports=($dstport)
+				    if [ "${#ports[@]}" -gt 1 ]; then
+					dstport=""
+					while [ "${#ports[@]}" -gt 1 ]; do
+					    val="${ports[@]:0:7}"
+					    dstport="$dstport __mport__:${val// /,}"
+					    ports=("${ports[@]:7}")
+					done
+					dstport="$dstport ${ports[@]}"
+				    fi
+				fi
 				;;
-			    icmp/* | ICMP/*)
+			    icmp/*)
 				proto=icmp
 				dstport=any
 				icmptype="${aservice#*/}"
@@ -810,34 +1077,18 @@ _fwy_rule()
 				    *)   icmptype_arg="--icmp-type $aicmptype";;
 				esac
 
-				if [ "${FIREWALLY_USE_MPORT:-0}" != 0 -a "$srcport" != any ]; then
-				    local -a sports=($srcport)
-				    if [ "${#sports[@]}" -gt 1 -a "${#sports[@]}" -le 7 ]; then
-					local sportsc="${sports[@]}"
-					srcport_arg="-m mport --sports ${sportsc// /,}"
-					srcport=__mport__
-				    fi
-				fi
 				for asrcport in $srcport; do
 				    case "$asrcport" in
 					any) srcport_arg=;;
-					__mport__);;
+					__mport__:*) srcport_arg="-m mport --sports ${asrcport#__mport__:}";;
 					!*)  srcport_arg="--sport ! ${asrcport:1}";;
 					*)   srcport_arg="--sport $asrcport";;
 				    esac
 
-				    if [ "${FIREWALLY_USE_MPORT:-0}" != 0 -a "$dstport" != any ]; then
-					local -a dports=($dstport)
-					if [ "${#dports[@]}" -gt 1 -a "${#dports[@]}" -le 7 ]; then
-					    local dportsc="${dports[@]}"
-					    local dstport_arg="-m mport --dports ${dportsc// /,}"
-					    dstport=__mport__
-					fi
-				    fi
 				    for adstport in $dstport; do
 					case "$adstport" in
 					    any) dstport_arg=;;
-					    __mport__);;
+					    __mport__:*) dstport_arg="-m mport --dports ${adstport#__mport__:}";;
 					    !*)  dstport_arg="--dport ! ${adstport:1}";;
 					    *)   dstport_arg="--dport $adstport";;
 					esac
@@ -895,7 +1146,7 @@ _fwy_rule()
 							fi
 
 							# create rule
-							if [ "$action" = REJECT -a "$aproto" = tcp -a -z "$action_args" ]; then
+							if [ "$action-$action_args-$aproto" = "REJECT--tcp" ]; then
 							    _fwy_iptables $base_cmd -j REJECT --reject-with tcp-reset || return 1
 							else
 							    _fwy_iptables $base_cmd -j "$action" $action_args || return 1
@@ -926,8 +1177,11 @@ version()
 {
     local _FWY_COMMAND="$FUNCNAME $@"
 
-    [ "$1" != "$_FWY_CONFIG_VERSION" ] && \
-	_fwy_error "configuration version '$1' not supported" && return 1
+    if [ "$1" != "$_FWY_CONFIG_VERSION" ]; then
+	_fwy_error "configuration version '$1' not supported"
+	return 1
+    fi
+    return 0
 }
 
 # iptables args..
@@ -945,6 +1199,10 @@ iptables()
 	local _FWY_CHAIN="$2"
 	shift 2
     fi
+    [ "$#" = 0 ] && _fwy_error "iptables requires arguments" && return 1
+
+    # Initialize if not done already
+    [ -d "${_FWY_TMP}/fw" ] || _fwy_initialize
 
     _fwy_iptables "$@"
 }
@@ -1301,7 +1559,7 @@ zone()
     # Link the new zone to the old ones
     for z2 in $_FWY_ZONES; do
 	_FWY_CHAIN="fwd_${z2}"
-	eval ": \${FIREWALLY_filter_${z2}_to_${zone}_POLICY:=\"drop loglimit\"}"
+	eval ": \${FIREWALLY_filter_${z2}_to_${zone}_POLICY:=\$FIREWALLY_filter_FORWARD_POLICY}"
 	for def in $defs; do
 	    _fwy_rule goto "${z2}_to_${zone}" oface "${def%%:*}" daddr "${def#*:}" || return 1
 	done
@@ -1311,7 +1569,7 @@ zone()
     _FWY_CHAIN="fwd_${zone}"
     for z2 in $_FWY_ZONES $zone; do
 	var="_FWY_ZONE_${z2}"
-	eval ": \${FIREWALLY_filter_${zone}_to_${z2}_POLICY:=\"drop loglimit\"}"
+	eval ": \${FIREWALLY_filter_${zone}_to_${z2}_POLICY:=\$FIREWALLY_filter_FORWARD_POLICY}"
 	for def in ${!var}; do
 	    _fwy_rule goto "${zone}_to_${z2}" oface "${def%%:*}" daddr "${def#*:}" || return 1
 	done
@@ -1424,10 +1682,17 @@ mac()
 	FIREWALLY_filter_check_mac_POLICY=
 	_fwy_create_chain check_mac || return 1
 	_fwy_create_chain mac_invalid || return 1
-	_FWY_CHAIN=INPUT
-	_fwy_iptables -m state --state NEW -j check_mac || return 1
-	_FWY_CHAIN=FORWARD
-	_fwy_iptables -m state --state NEW -j check_mac || return 1
+	if [ "${FIREWALLY_STATEFUL:-0}" != 0 ]; then
+	    _FWY_CHAIN=INPUT
+	    _fwy_iptables -m state --state NEW -j check_mac || return 1
+	    _FWY_CHAIN=FORWARD
+	    _fwy_iptables -m state --state NEW -j check_mac || return 1
+	else
+	    _FWY_CHAIN=INPUT
+	    _fwy_iptables -j check_mac || return 1
+	    _FWY_CHAIN=FORWARD
+	    _fwy_iptables -j check_mac || return 1
+	fi
     fi
     _FWY_CHAIN=check_mac
     _fwy_rule goto mac_invalid iface "$1" src "$2" mac "!$3"
@@ -1522,7 +1787,7 @@ while [ "$#" -gt 0 ]; do
 	    exit 0
 	    ;;
 	*)
-	    if [ -f "$1" ]; then
+	    if [ -e "$1" ]; then
 		FIREWALLY_CONFIG="$1"
 		: "${_FWY_MODE:=try}"
 	    else
@@ -1618,7 +1883,7 @@ if [ "$_FWY_MODE" = explain ]; then
     echo "FireWally -- Interactive Mode"
 
     while :; do
-	read -p "FireWally [$_FWY_TABLE:$_FWY_CHAIN]> " -e -r
+	read -p "FireWally [$_FWY_TABLE:$_FWY_CHAIN]> " -e
 	[ -z "$REPLY" ] && continue
 	set -- ${REPLY}
 	case "$1" in
@@ -1693,7 +1958,7 @@ fi
 
 # Add line number information
 _fwy_verbose "Preprocessing source"
-[ -f "$FIREWALLY_CONFIG" ] || _fwy_fatal "configuration file '$FIREWALLY_CONFIG' does not exist"
+[ -e "$FIREWALLY_CONFIG" ] || _fwy_fatal "configuration file '$FIREWALLY_CONFIG' does not exist"
 [ -r "$FIREWALLY_CONFIG" ] || _fwy_fatal "cannot read configuration file '$FIREWALLY_CONFIG'"
 
 ${_FWY_AWK_CMD} "/^[[:space:]]*(accept|chain|dnat|drop|from|goto|imq|iptables|jump|log|loglimit\
@@ -1711,7 +1976,17 @@ source "${_FWY_TMP}/source.config" || _fwy_fatal "cannot execute configuration"
 enable trap
 enable exit
 
+if [ -n "$FIREWALLY_UNCONFIGURED" ]; then
+    if [ "$_FWY_MODE" = start ]; then
+	echo "not configured"
+    else
+	_fwy_error "firewall is unconfigured"
+    fi
+    exit 1
+fi
+
 # Configuration OK, generate rules
+[ -d "${_FWY_TMP}/fw" ] || _fwy_initialize
 _fwy_verbose "Generating rules"
 echo -e "# iptables-save file generated by FireWally $FIREWALLY_VERSION\n#" >"${_FWY_NEW_FW}"
 for tabledir in "${_FWY_TMP}/fw"/*; do

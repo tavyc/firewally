@@ -1,0 +1,24 @@
+TEST nat: snat to multiple addresses
+firewally
+chain nat POSTROUTING
+    snat to 1.2.3.4,1.2.3.5,1.2.3.6 src 192.168.1.0/24
+EOF
+*filter
+:FORWARD -
+:INPUT -
+:OUTPUT -
+-A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A FORWARD -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: FORWARD DROP: " --log-level notice
+-A FORWARD -j DROP
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT DROP: " --log-level notice
+-A INPUT -j DROP
+-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -j ACCEPT
+COMMIT
+*nat
+:POSTROUTING -
+-A POSTROUTING -s 192.168.1.0/24 -j SNAT --to-source 1.2.3.4 --to-source 1.2.3.5 --to-source 1.2.3.6
+COMMIT

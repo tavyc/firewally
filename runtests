@@ -1,0 +1,127 @@
+#!/bin/bash
+#
+# Run regression tests
+#
+
+#
+# The input file(s) has/have the following structure:
+#
+# # <test_title>
+# <command_line>
+# <input>
+# ...
+# EOF
+# ERROR
+# <output>
+# ...
+
+unset LANG LC_ADDRESS LC_ALL LC_COLLATE LC_CTYPE LC_IDENTIFICATION LC_MEASUREMENT LC_MESSAGES
+unset LC_MONETARY LC_NAME LC_NUMERIC LC_PAPER LC_TELEPHONE LC_TIME
+
+export FIREWALLY_SIMPLE_ERRORS=1
+
+firewally()
+{
+    command ./firewally debug /dev/stdin >_tmp_out.$$
+    local res=$?
+    sed '/^#/d' <_tmp_out.$$
+    return $res
+}
+
+passed()
+{
+    echo "passed"
+    passed_tests=$[passed_tests + 1]
+}
+
+failed()
+{
+    echo "FAILED: $@"
+    echo "  File:    $file"
+    echo "  Command: $cmd"
+    echo "  Standard output:"
+    sed 's/^/  | /' <_out.$$
+    echo "  Standard error:"
+    sed 's/^/  | /' <_err.$$
+    echo "  Reference output:"
+    sed 's/^/  | /' <_ref.$$
+    if [ -n "$expect_error" ]; then
+	echo "  diff -u ref stderr:"
+	diff -u _ref.$$ _err.$$ | sed 's/^/  | /'
+    else
+	echo "  diff -u ref stdout:"
+	diff -u _ref.$$ _out.$$ | sed 's/^/  | /'
+    fi
+    echo
+    failed_tests=$[failed_tests + 1]
+}
+
+run_test()
+{
+    echo -n "$title: "
+    eval "$cmd" <_in.$$ >_out.$$ 2>_err.$$
+    result="${PIPESTATUS[0]}"
+    if [ -n "$expect_error" ]; then
+	if [ "$result" = 0 ]; then
+	    failed "expected error"
+	elif cmp -s _err.$$ _ref.$$; then
+	    passed
+	else
+	    failed "error output differs"
+	fi
+    else
+	if [ "$result" = 0 ]; then
+	    if cmp -s _out.$$ _ref.$$; then
+		passed
+	    else
+		failed "output differs"
+	    fi
+	else
+	    failed "got error"
+	fi
+    fi
+    rm -f _out.$$ _err.$$
+    num_tests=$[num_tests + 1]
+    title= expect_error=
+}
+
+num_tests=0 passed_tests=0 failed_tests=0
+title=
+for file in tests/*; do
+    case "$file" in
+	*~ | *.bak | .svn) continue;;
+    esac
+
+    while read line; do
+	case "$line" in
+	    "TEST "*)
+		[ -n "$title" ] && run_test
+		: >_ref.$$
+		: >_in.$$
+		title="${line#TEST }"
+		expect_error=
+		read cmd
+		;;
+	    ERROR)
+		expect_error=1
+		;;
+	    EOF)
+		mv -f _ref.$$ _in.$$
+		: >_ref.$$
+		;;
+	    *)
+		echo "$line" >> _ref.$$
+		;;
+	esac
+    done < "$file"
+    run_test
+done
+
+echo "$num_tests tests: $passed_tests passed, $failed_tests failed"
+rm -f _in.$$ _out.$$ _err.$$ _ref.$$ _tmp_out.$$
+
+if [ "$failed_tests" -gt 0 ]; then
+    exit 1
+else
+    exit 0
+fi

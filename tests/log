@@ -1,0 +1,92 @@
+TEST log: as action
+firewally
+log "mail" service smtp
+EOF
+*filter
+:FORWARD -
+:INPUT -
+:OUTPUT -
+-A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A FORWARD -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: FORWARD DROP: " --log-level notice
+-A FORWARD -j DROP
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -p tcp --dport smtp -j LOG --log-prefix "FW: INPUT mail: " --log-level notice
+-A INPUT -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT DROP: " --log-level notice
+-A INPUT -j DROP
+-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -j ACCEPT
+COMMIT
+TEST log: bad characters in text
+firewally
+accept service smtp log '"hello"'
+EOF
+ERROR
+
+firewally:   ERROR: invalid parameter for 'log': quotes and backslashes are not allowed
+TEST log: spaces in text
+firewally
+accept service smtp log "hello mail"
+EOF
+*filter
+:FORWARD -
+:INPUT -
+:OUTPUT -
+-A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A FORWARD -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: FORWARD DROP: " --log-level notice
+-A FORWARD -j DROP
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -p tcp --dport smtp -j LOG --log-prefix "FW: INPUT ACCEPT hello mail: " --log-level notice
+-A INPUT -p tcp --dport smtp -j ACCEPT
+-A INPUT -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT DROP: " --log-level notice
+-A INPUT -j DROP
+-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -j ACCEPT
+COMMIT
+TEST log: ignore long texts
+firewally
+accept service smtp log "hello its mail"
+EOF
+*filter
+:FORWARD -
+:INPUT -
+:OUTPUT -
+-A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A FORWARD -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: FORWARD DROP: " --log-level notice
+-A FORWARD -j DROP
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -p tcp --dport smtp -j LOG --log-prefix "FW: INPUT ACCEPT: " --log-level notice
+-A INPUT -p tcp --dport smtp -j ACCEPT
+-A INPUT -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT DROP: " --log-level notice
+-A INPUT -j DROP
+-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -j ACCEPT
+COMMIT
+TEST log: truncate long texts
+firewally
+chain local_to_net
+    accept service smtp log "hello its mail"
+EOF
+*filter
+:FORWARD -
+:INPUT -
+:OUTPUT -
+:local_to_net -
+-A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A FORWARD -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: FORWARD DROP: " --log-level notice
+-A FORWARD -j DROP
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT DROP: " --log-level notice
+-A INPUT -j DROP
+-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -j ACCEPT
+-A local_to_net -p tcp --dport smtp -j LOG --log-prefix "FW: local2net ACCEPT: " --log-level notice
+-A local_to_net -p tcp --dport smtp -j ACCEPT
+COMMIT

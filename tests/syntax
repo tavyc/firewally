@@ -1,0 +1,268 @@
+TEST syntax: many rule parameters
+firewally
+accept src host1,host2 dst host3,host3 iface eth0,eth1 oface eth0,eth1 proto tcp,udp
+EOF
+*filter
+:FORWARD -
+:INPUT -
+:OUTPUT -
+-A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A FORWARD -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: FORWARD DROP: " --log-level notice
+-A FORWARD -j DROP
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -i eth0 -o eth0 -s host1 -d host3 -p tcp -j ACCEPT
+-A INPUT -i eth0 -o eth0 -s host1 -d host3 -p udp -j ACCEPT
+-A INPUT -i eth0 -o eth0 -s host1 -d host3 -p tcp -j ACCEPT
+-A INPUT -i eth0 -o eth0 -s host1 -d host3 -p udp -j ACCEPT
+-A INPUT -i eth0 -o eth0 -s host2 -d host3 -p tcp -j ACCEPT
+-A INPUT -i eth0 -o eth0 -s host2 -d host3 -p udp -j ACCEPT
+-A INPUT -i eth0 -o eth0 -s host2 -d host3 -p tcp -j ACCEPT
+-A INPUT -i eth0 -o eth0 -s host2 -d host3 -p udp -j ACCEPT
+-A INPUT -i eth0 -o eth1 -s host1 -d host3 -p tcp -j ACCEPT
+-A INPUT -i eth0 -o eth1 -s host1 -d host3 -p udp -j ACCEPT
+-A INPUT -i eth0 -o eth1 -s host1 -d host3 -p tcp -j ACCEPT
+-A INPUT -i eth0 -o eth1 -s host1 -d host3 -p udp -j ACCEPT
+-A INPUT -i eth0 -o eth1 -s host2 -d host3 -p tcp -j ACCEPT
+-A INPUT -i eth0 -o eth1 -s host2 -d host3 -p udp -j ACCEPT
+-A INPUT -i eth0 -o eth1 -s host2 -d host3 -p tcp -j ACCEPT
+-A INPUT -i eth0 -o eth1 -s host2 -d host3 -p udp -j ACCEPT
+-A INPUT -i eth1 -o eth0 -s host1 -d host3 -p tcp -j ACCEPT
+-A INPUT -i eth1 -o eth0 -s host1 -d host3 -p udp -j ACCEPT
+-A INPUT -i eth1 -o eth0 -s host1 -d host3 -p tcp -j ACCEPT
+-A INPUT -i eth1 -o eth0 -s host1 -d host3 -p udp -j ACCEPT
+-A INPUT -i eth1 -o eth0 -s host2 -d host3 -p tcp -j ACCEPT
+-A INPUT -i eth1 -o eth0 -s host2 -d host3 -p udp -j ACCEPT
+-A INPUT -i eth1 -o eth0 -s host2 -d host3 -p tcp -j ACCEPT
+-A INPUT -i eth1 -o eth0 -s host2 -d host3 -p udp -j ACCEPT
+-A INPUT -i eth1 -o eth1 -s host1 -d host3 -p tcp -j ACCEPT
+-A INPUT -i eth1 -o eth1 -s host1 -d host3 -p udp -j ACCEPT
+-A INPUT -i eth1 -o eth1 -s host1 -d host3 -p tcp -j ACCEPT
+-A INPUT -i eth1 -o eth1 -s host1 -d host3 -p udp -j ACCEPT
+-A INPUT -i eth1 -o eth1 -s host2 -d host3 -p tcp -j ACCEPT
+-A INPUT -i eth1 -o eth1 -s host2 -d host3 -p udp -j ACCEPT
+-A INPUT -i eth1 -o eth1 -s host2 -d host3 -p tcp -j ACCEPT
+-A INPUT -i eth1 -o eth1 -s host2 -d host3 -p udp -j ACCEPT
+-A INPUT -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT DROP: " --log-level notice
+-A INPUT -j DROP
+-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -j ACCEPT
+COMMIT
+TEST syntax: valid srcport/dstport
+firewally
+FIREWALLY_USE_MPORT=0
+accept proto tcp srcport 1024: dstport 25,80
+accept proto tcp,udp dstport 137:139
+EOF
+*filter
+:FORWARD -
+:INPUT -
+:OUTPUT -
+-A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A FORWARD -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: FORWARD DROP: " --log-level notice
+-A FORWARD -j DROP
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -p tcp --sport 1024: --dport 25 -j ACCEPT
+-A INPUT -p tcp --sport 1024: --dport 80 -j ACCEPT
+-A INPUT -p tcp --dport 137:139 -j ACCEPT
+-A INPUT -p udp --dport 137:139 -j ACCEPT
+-A INPUT -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT DROP: " --log-level notice
+-A INPUT -j DROP
+-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -j ACCEPT
+COMMIT
+TEST syntax: invalid srcport/dstport
+firewally
+FIREWALLY_USE_MPORT=0
+accept proto icmp dstport 25
+EOF
+ERROR
+
+firewally:   ERROR: parameter 'dstport' is incompatible with proto 'icmp'
+TEST syntax: invalid icmptype
+firewally
+FIREWALLY_USE_MPORT=0
+accept proto tcp icmptype echo-request
+EOF
+ERROR
+
+firewally:   ERROR: parameter 'icmptype' is incompatible with proto 'tcp'
+TEST syntax: empty parameters
+firewally
+FIREWALLY_USE_MPORT=0
+accept proto tcp dst "" dstport 25
+EOF
+*filter
+:FORWARD -
+:INPUT -
+:OUTPUT -
+-A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A FORWARD -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: FORWARD DROP: " --log-level notice
+-A FORWARD -j DROP
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT DROP: " --log-level notice
+-A INPUT -j DROP
+-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -j ACCEPT
+COMMIT
+TEST syntax: empty elements in parameters
+firewally
+FIREWALLY_USE_MPORT=0
+accept proto tcp dst "1.2.3.4  1.2.3.5" dstport 25,,,80
+EOF
+*filter
+:FORWARD -
+:INPUT -
+:OUTPUT -
+-A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A FORWARD -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: FORWARD DROP: " --log-level notice
+-A FORWARD -j DROP
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -d 1.2.3.4 -p tcp --dport 25 -j ACCEPT
+-A INPUT -d 1.2.3.4 -p tcp --dport 80 -j ACCEPT
+-A INPUT -d 1.2.3.5 -p tcp --dport 25 -j ACCEPT
+-A INPUT -d 1.2.3.5 -p tcp --dport 80 -j ACCEPT
+-A INPUT -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT DROP: " --log-level notice
+-A INPUT -j DROP
+-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -j ACCEPT
+COMMIT
+TEST syntax: empty actions
+firewally
+goto "" dst server
+EOF
+*filter
+:FORWARD -
+:INPUT -
+:OUTPUT -
+-A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A FORWARD -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: FORWARD DROP: " --log-level notice
+-A FORWARD -j DROP
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT DROP: " --log-level notice
+-A INPUT -j DROP
+-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -j ACCEPT
+COMMIT
+TEST syntax: target and match
+firewally
+target "REJECT --reject-with tcp-reset" proto tcp match "-m ipp2p --ipp2p"
+EOF
+*filter
+:FORWARD -
+:INPUT -
+:OUTPUT -
+-A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A FORWARD -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: FORWARD DROP: " --log-level notice
+-A FORWARD -j DROP
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -p tcp -m ipp2p --ipp2p -j REJECT --reject-with tcp-reset
+-A INPUT -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT DROP: " --log-level notice
+-A INPUT -j DROP
+-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -j ACCEPT
+COMMIT
+TEST syntax: iptables requires arguments
+firewally
+iptables
+EOF
+ERROR
+
+firewally:   ERROR: iptables requires arguments
+TEST syntax: iptables
+firewally
+iptables -p tcp -m ipp2p --ipp2p -j REJECT --reject-with tcp-reset
+EOF
+*filter
+:FORWARD -
+:INPUT -
+:OUTPUT -
+-A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A FORWARD -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: FORWARD DROP: " --log-level notice
+-A FORWARD -j DROP
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -p tcp -m ipp2p --ipp2p -j REJECT --reject-with tcp-reset
+-A INPUT -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT DROP: " --log-level notice
+-A INPUT -j DROP
+-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -j ACCEPT
+COMMIT
+TEST syntax: simple negation
+firewally
+accept dst server src not pc1,pc2 service smtp
+EOF
+*filter
+:FORWARD -
+:INPUT -
+:INPUT_1 -
+:OUTPUT -
+-A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A FORWARD -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: FORWARD DROP: " --log-level notice
+-A FORWARD -j DROP
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -d server -p tcp --dport smtp -j INPUT_1
+-A INPUT -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT DROP: " --log-level notice
+-A INPUT -j DROP
+-A INPUT_1 -s pc1 -j RETURN
+-A INPUT_1 -s pc2 -j RETURN
+-A INPUT_1 -j ACCEPT
+-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -j ACCEPT
+COMMIT
+TEST syntax: complex negation
+firewally
+FIREWALLY_USE_MPORT=0
+accept src pc1,pc2 dst not server1,server2 service not allweb,allmail
+EOF
+*filter
+:FORWARD -
+:INPUT -
+:INPUT_1 -
+:OUTPUT -
+-A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A FORWARD -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: FORWARD DROP: " --log-level notice
+-A FORWARD -j DROP
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -s pc1 -j INPUT_1
+-A INPUT -s pc2 -j INPUT_1
+-A INPUT -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT DROP: " --log-level notice
+-A INPUT -j DROP
+-A INPUT_1 -s server1 -j RETURN
+-A INPUT_1 -s server2 -j RETURN
+-A INPUT_1 -p tcp --dstport 80 -j RETURN
+-A INPUT_1 -p tcp --dstport 443 -j RETURN
+-A INPUT_1 -p tcp --dstport 25 -j RETURN
+-A INPUT_1 -p tcp --dstport 465 -j RETURN
+-A INPUT_1 -p tcp --dstport 587 -j RETURN
+-A INPUT_1 -p tcp --dstport 110 -j RETURN
+-A INPUT_1 -p tcp --dstport 143 -j RETURN
+-A INPUT_1 -p tcp --dstport 995 -j RETURN
+-A INPUT_1 -p tcp --dstport 993 -j RETURN
+-A INPUT_1 -j ACCEPT
+-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -j ACCEPT
+COMMIT
+TEST syntax: invalid negation
+firewally
+accept proto not tcp,udp dport 25
+EOF
+ERROR
+
+firewally:   ERROR: parameter 'dport' is incompatible with proto 'not tcp udp'

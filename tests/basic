@@ -1,0 +1,37 @@
+TEST basic: help works
+./firewally help 2>&1 | sed 1q
+EOF
+Usage: ./firewally [configfile] [argument]
+TEST basic: version check
+firewally
+version 1
+EOF
+*filter
+:FORWARD -
+:INPUT -
+:OUTPUT -
+-A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A FORWARD -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: FORWARD DROP: " --log-level notice
+-A FORWARD -j DROP
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT DROP: " --log-level notice
+-A INPUT -j DROP
+-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -j ACCEPT
+COMMIT
+TEST basic: bad version
+firewally
+version 2
+EOF
+ERROR
+
+firewally:   ERROR: configuration version '2' not supported
+TEST basic: unconfigured
+firewally
+FIREWALLY_UNCONFIGURED=1
+EOF
+ERROR
+
+firewally:   ERROR: firewall is unconfigured

@@ -1,0 +1,65 @@
+TEST chains: validate names
+firewally
+chain blabla!!!
+EOF
+ERROR
+
+firewally:   ERROR: invalid chain name: 'blabla!!!'
+TEST chains: validate names length
+firewally
+chain wayyyytoooloooooooonnngggggg
+EOF
+ERROR
+
+firewally:   ERROR: chain name too long: 'wayyyytoooloooooooonnngggggg'
+TEST chains: rules create targets
+firewally
+goto testchain proto tcp
+EOF
+*filter
+:FORWARD -
+:INPUT -
+:OUTPUT -
+:testchain -
+-A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A FORWARD -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: FORWARD DROP: " --log-level notice
+-A FORWARD -j DROP
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -p tcp -j testchain
+-A INPUT -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT DROP: " --log-level notice
+-A INPUT -j DROP
+-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -j ACCEPT
+COMMIT
+TEST chains: policies on targets
+firewally
+FIREWALLY_filter_testchain_POLICY=accept
+goto testchain proto tcp
+EOF
+*filter
+:FORWARD -
+:INPUT -
+:OUTPUT -
+:testchain -
+-A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A FORWARD -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: FORWARD DROP: " --log-level notice
+-A FORWARD -j DROP
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -p tcp -j testchain
+-A INPUT -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT DROP: " --log-level notice
+-A INPUT -j DROP
+-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -j ACCEPT
+-A testchain -j ACCEPT
+COMMIT
+TEST chains: rules validate target names
+firewally
+goto testchain!! proto tcp
+EOF
+ERROR
+
+firewally:   ERROR: invalid chain name: 'testchain!!'

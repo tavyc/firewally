@@ -1,0 +1,136 @@
+TEST protection: simple
+firewally
+protection new-tcp-no-syn
+EOF
+*filter
+:FORWARD -
+:INPUT -
+:INPUT_nosyn -
+:OUTPUT -
+-A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A FORWARD -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: FORWARD DROP: " --log-level notice
+-A FORWARD -j DROP
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -p tcp ! --syn -m state --state NEW -j INPUT_nosyn
+-A INPUT -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT DROP: " --log-level notice
+-A INPUT -j DROP
+-A INPUT_nosyn -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT_nosyn DROP: " --log-level notice
+-A INPUT_nosyn -j DROP
+-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -j ACCEPT
+COMMIT
+TEST protection: complex
+firewally
+protection strong 20/sec
+EOF
+*filter
+:FORWARD -
+:INPUT -
+:INPUT_bad -
+:INPUT_badi -
+:INPUT_ifld -
+:INPUT_inv -
+:INPUT_nosyn -
+:INPUT_sfld -
+:OUTPUT -
+-A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A FORWARD -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: FORWARD DROP: " --log-level notice
+-A FORWARD -j DROP
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -p tcp ! --syn -m state --state NEW -j INPUT_nosyn
+-A INPUT -p tcp --syn -j INPUT_sfld
+-A INPUT -p tcp --tcp-flags ALL ALL -j INPUT_bad
+-A INPUT -p tcp --tcp-flags ALL NONE -j INPUT_bad
+-A INPUT -p tcp --tcp-flags SYN,RST SYN,RST -j INPUT_bad
+-A INPUT -p tcp --tcp-flags ALL SYN,RST,ACK,FIN,URG -j INPUT_bad
+-A INPUT -p tcp --tcp-flags ALL FIN,URG,PSH -j INPUT_bad
+-A INPUT -m state --state INVALID -j INPUT_inv
+-A INPUT -p icmp -j INPUT_ifld
+-A INPUT -p icmp --icmp-type redirect -j INPUT_badi
+-A INPUT -p icmp --icmp-type router-advertisement -j INPUT_badi
+-A INPUT -p icmp --icmp-type router-solicitation -j INPUT_badi
+-A INPUT -p icmp --icmp-type timestamp-request -j INPUT_badi
+-A INPUT -p icmp --icmp-type timestamp-reply -j INPUT_badi
+-A INPUT -p icmp --icmp-type address-mask-request -j INPUT_badi
+-A INPUT -p icmp --icmp-type address-mask-reply -j INPUT_badi
+-A INPUT -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT DROP: " --log-level notice
+-A INPUT -j DROP
+-A INPUT_bad -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT_bad DROP: " --log-level notice
+-A INPUT_bad -j DROP
+-A INPUT_badi -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT_badi DROP: " --log-level notice
+-A INPUT_badi -j DROP
+-A INPUT_ifld -m limit --limit 20/sec --limit-burst 20 -j RETURN
+-A INPUT_ifld -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT_ifld DROP: " --log-level notice
+-A INPUT_ifld -j DROP
+-A INPUT_inv -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT_inv DROP: " --log-level notice
+-A INPUT_inv -j DROP
+-A INPUT_nosyn -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT_nosyn DROP: " --log-level notice
+-A INPUT_nosyn -j DROP
+-A INPUT_sfld -m limit --limit 20/sec --limit-burst 20 -j RETURN
+-A INPUT_sfld -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT_sfld DROP: " --log-level notice
+-A INPUT_sfld -j DROP
+-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -j ACCEPT
+COMMIT
+TEST protection: unroutable
+firewally
+protection unroutable-src
+EOF
+*filter
+:FORWARD -
+:INPUT -
+:OUTPUT -
+:unroutable -
+-A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A FORWARD -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: FORWARD DROP: " --log-level notice
+-A FORWARD -j DROP
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -s 10.0.0.0/8 -j unroutable
+-A INPUT -s 172.16.0.0/12 -j unroutable
+-A INPUT -s 169.254.0.0/16 -j unroutable
+-A INPUT -s 192.168.0.0/16 -j unroutable
+-A INPUT -s 192.88.99.0/24 -j unroutable
+-A INPUT -s 0.0.0.0/7 -j unroutable
+-A INPUT -s 2.0.0.0/8 -j unroutable
+-A INPUT -s 5.0.0.0/8 -j unroutable
+-A INPUT -s 7.0.0.0/8 -j unroutable
+-A INPUT -s 23.0.0.0/8 -j unroutable
+-A INPUT -s 27.0.0.0/8 -j unroutable
+-A INPUT -s 31.0.0.0/8 -j unroutable
+-A INPUT -s 36.0.0.0/7 -j unroutable
+-A INPUT -s 39.0.0.0/8 -j unroutable
+-A INPUT -s 41.0.0.0/8 -j unroutable
+-A INPUT -s 42.0.0.0/8 -j unroutable
+-A INPUT -s 49.0.0.0/8 -j unroutable
+-A INPUT -s 50.0.0.0/8 -j unroutable
+-A INPUT -s 58.0.0.0/7 -j unroutable
+-A INPUT -s 71.0.0.0/8 -j unroutable
+-A INPUT -s 72.0.0.0/5 -j unroutable
+-A INPUT -s 85.0.0.0/8 -j unroutable
+-A INPUT -s 86.0.0.0/7 -j unroutable
+-A INPUT -s 88.0.0.0/5 -j unroutable
+-A INPUT -s 96.0.0.0/3 -j unroutable
+-A INPUT -s 173.0.0.0/8 -j unroutable
+-A INPUT -s 174.0.0.0/7 -j unroutable
+-A INPUT -s 176.0.0.0/5 -j unroutable
+-A INPUT -s 184.0.0.0/6 -j unroutable
+-A INPUT -s 189.0.0.0/8 -j unroutable
+-A INPUT -s 190.0.0.0/8 -j unroutable
+-A INPUT -s 192.0.2.0/24 -j unroutable
+-A INPUT -s 197.0.0.0/8 -j unroutable
+-A INPUT -s 198.18.0.0/15 -j unroutable
+-A INPUT -s 223.0.0.0/8 -j unroutable
+-A INPUT -s 240.0.0.0/4 -j unroutable
+-A INPUT -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT DROP: " --log-level notice
+-A INPUT -j DROP
+-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -j ACCEPT
+-A unroutable -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: unroutable DROP: " --log-level notice
+-A unroutable -j DROP
+COMMIT

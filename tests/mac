@@ -1,0 +1,54 @@
+TEST mac: simple
+firewally
+mac eth0 192.168.1.2 00:a0:0b:c1:d2:34
+mac eth0 192.168.1.3 00:a0:0b:c1:d2:35
+EOF
+*filter
+:FORWARD -
+:INPUT -
+:OUTPUT -
+:check_mac -
+:mac_invalid -
+-A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A FORWARD -m state --state NEW -j check_mac
+-A FORWARD -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: FORWARD DROP: " --log-level notice
+-A FORWARD -j DROP
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -m state --state NEW -j check_mac
+-A INPUT -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT DROP: " --log-level notice
+-A INPUT -j DROP
+-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -j ACCEPT
+-A check_mac -i eth0 -s 192.168.1.2 -m mac ! --mac-source 00:a0:0b:c1:d2:34 -j mac_invalid
+-A check_mac -i eth0 -s 192.168.1.3 -m mac ! --mac-source 00:a0:0b:c1:d2:35 -j mac_invalid
+-A mac_invalid -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: mac_invalid DROP: " --log-level notice
+-A mac_invalid -j DROP
+COMMIT
+TEST mac: not stateful
+firewally
+FIREWALLY_STATEFUL=0
+mac eth0 192.168.1.2 00:a0:0b:c1:d2:34
+mac eth0 192.168.1.3 00:a0:0b:c1:d2:35
+EOF
+*filter
+:FORWARD -
+:INPUT -
+:OUTPUT -
+:check_mac -
+:mac_invalid -
+-A FORWARD -j check_mac
+-A FORWARD -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: FORWARD DROP: " --log-level notice
+-A FORWARD -j DROP
+-A INPUT -i lo -j ACCEPT
+-A INPUT -j check_mac
+-A INPUT -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT DROP: " --log-level notice
+-A INPUT -j DROP
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -j ACCEPT
+-A check_mac -i eth0 -s 192.168.1.2 -m mac ! --mac-source 00:a0:0b:c1:d2:34 -j mac_invalid
+-A check_mac -i eth0 -s 192.168.1.3 -m mac ! --mac-source 00:a0:0b:c1:d2:35 -j mac_invalid
+-A mac_invalid -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: mac_invalid DROP: " --log-level notice
+-A mac_invalid -j DROP
+COMMIT
