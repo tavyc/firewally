@@ -25,7 +25,7 @@ esac
 shopt -s extglob
 
 # Version
-FIREWALLY_VERSION='0.4'
+FIREWALLY_VERSION='0.5'
 FIREWALLY_REVISION='$Id$'
 _FWY_CONFIG_VERSION=1
 
@@ -871,7 +871,7 @@ _fwy_rule()
 			    _fwy_iptables -p "$aproto" -m mport --sports "${asrcport#__mport__:}" -j RETURN || return 1
 			    ;;
 			*)
-			    _fwy_iptables -p "$aproto" --srcport "$asrcport" -j RETURN || return 1
+			    _fwy_iptables -p "$aproto" --sport "$asrcport" -j RETURN || return 1
 			    ;;
 		    esac
 		done
@@ -886,7 +886,7 @@ _fwy_rule()
 			    _fwy_iptables -p "$aproto" -m mport --dports "${adstport#__mport__:}" -j RETURN || return 1
 			    ;;
 			*)
-			    _fwy_iptables -p "$aproto" --dstport "$adstport" -j RETURN || return 1
+			    _fwy_iptables -p "$aproto" --dport "$adstport" -j RETURN || return 1
 			    ;;
 		    esac
 		done
@@ -936,7 +936,7 @@ _fwy_rule()
 					--dports "${adstport#__mport__:}" -j RETURN || return 1
 				    ;;
 			       *)
-				    _fwy_iptables -p "${aservice%%/*}" --dstport "$adstport" -j RETURN || return 1
+				    _fwy_iptables -p "${aservice%%/*}" --dport "$adstport" -j RETURN || return 1
 				    ;;
 		            esac
 			done

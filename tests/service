@@ -41,7 +41,7 @@ COMMIT
 TEST service: complex
 firewally
 FIREWALLY_USE_MPORT=0
-accept service icmp,ssh,ipsec,pptp,tinc,allweb dst server
+accept service icmp,ssh,ipsec,pptp,tinc,allweb dst 1.2.3.4
 EOF
 *filter
 :FORWARD -
@@ -52,17 +52,17 @@ EOF
 -A FORWARD -j DROP
 -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 -A INPUT -i lo -j ACCEPT
--A INPUT -d server -p tcp --dport ssh -j ACCEPT
--A INPUT -d server -p tcp --dport 1723 -j ACCEPT
--A INPUT -d server -p tcp --dport 655 -j ACCEPT
--A INPUT -d server -p tcp --dport 80 -j ACCEPT
--A INPUT -d server -p tcp --dport 443 -j ACCEPT
--A INPUT -d server -p udp --dport 500 -j ACCEPT
--A INPUT -d server -p udp --dport 655 -j ACCEPT
--A INPUT -d server -p icmp -j ACCEPT
--A INPUT -d server -p esp -j ACCEPT
--A INPUT -d server -p ah -j ACCEPT
--A INPUT -d server -p gre -j ACCEPT
+-A INPUT -d 1.2.3.4 -p tcp --dport ssh -j ACCEPT
+-A INPUT -d 1.2.3.4 -p tcp --dport 1723 -j ACCEPT
+-A INPUT -d 1.2.3.4 -p tcp --dport 655 -j ACCEPT
+-A INPUT -d 1.2.3.4 -p tcp --dport 80 -j ACCEPT
+-A INPUT -d 1.2.3.4 -p tcp --dport 443 -j ACCEPT
+-A INPUT -d 1.2.3.4 -p udp --dport 500 -j ACCEPT
+-A INPUT -d 1.2.3.4 -p udp --dport 655 -j ACCEPT
+-A INPUT -d 1.2.3.4 -p icmp -j ACCEPT
+-A INPUT -d 1.2.3.4 -p esp -j ACCEPT
+-A INPUT -d 1.2.3.4 -p ah -j ACCEPT
+-A INPUT -d 1.2.3.4 -p gre -j ACCEPT
 -A INPUT -m limit --limit 1/second --limit-burst 2 -j LOG --log-prefix "FW: INPUT DROP: " --log-level notice
 -A INPUT -j DROP
 -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
