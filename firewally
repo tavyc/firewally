@@ -25,7 +25,7 @@ esac
 shopt -s extglob
 
 # Version
-FIREWALLY_VERSION='0.1'
+FIREWALLY_VERSION='0.2'
 FIREWALLY_REVISION='$Id$'
 _FWY_CONFIG_VERSION=1
 
@@ -42,6 +42,7 @@ FIREWALLY_filter_INPUT_POLICY="drop loglimit"
 FIREWALLY_filter_OUTPUT_POLICY="accept"
 FIREWALLY_filter_FORWARD_POLICY="drop loglimit"
 FIREWALLY_filter_unroutable_POLICY="drop loglimit"
+FIREWALLY_filter_mac_invalid_POLICY="drop loglimit"
 FIREWALLY_SYNFLOOD_LIMIT=50/second
 FIREWALLY_ICMPFLOOD_LIMIT=20/second
 
@@ -76,11 +77,12 @@ _FWY_COMMAND=
 _FWY_TABLE=filter
 _FWY_CHAIN=INPUT
 _FWY_RULES_INIT=1
-_FWY_RULES_ZONE_ANY1=2
-_FWY_RULES_ZONE_ANY2=3
-_FWY_RULES_ZONE_SEL=4
-_FWY_RULES_USER=5
-_FWY_RULES_POLICY=6
+_FWY_RULES_MAC=2
+_FWY_RULES_ZONE_ANY1=3
+_FWY_RULES_ZONE_ANY2=4
+_FWY_RULES_ZONE_SEL=5
+_FWY_RULES_USER=6
+_FWY_RULES_POLICY=7
 _FWY_RULES=
 _FWY_ZONES=
 _FWY_ZONES_INIT=
@@ -472,25 +474,25 @@ _fwy_iptables()
 _fwy_rule()
 {
     # Variables
-    local arg var val svc
-    local iface=any aiface
-    local oface=any aoface
-    local src=any asrc
-    local dst=any adst
-    local proto=any aproto
-    local srcport=any asrcport
-    local dstport=any adstport
-    local icmptype=any aicmptype
+    local arg var val svc base_cmd
+    local iface=any aiface iface_arg
+    local oface=any aoface oface_arg
+    local src=any asrc src_arg
+    local dst=any adst dst_arg
+    local proto=any aproto proto_arg
+    local srcport=any asrcport srcport_arg
+    local dstport=any adstport dstport_arg
+    local icmptype=any aicmptype icmptype_arg
+    local mac=any amac mac_arg
+    local mark=any amark mark_arg
+    local dscp=any adscp dscp_arg
+    local tos=any atos tos_arg
+    local state=any state_arg
     local service=any aservice
-    local mac=any amac
-    local mark=any amark
-    local dscp=any adscp
-    local tos=any atos
-    local state=any
-    local limit= limit_burst=
-    local match=
-    local log= log_match= log_args=
-    local action= action_args= action_is_chain=
+    local limit limit_burst limit_arg
+    local match
+    local log log_match log_args
+    local action action_args action_is_chain
 
     # Parse arguments
     while [ $# -gt 0 ]; do
@@ -743,30 +745,30 @@ _fwy_rule()
     # Expand rules
     for aiface in $iface; do
 	case "$aiface" in
-	    any) local iface_arg=;;
-	    !*)  local iface_arg="-i ! ${aiface:1}";;
-	    *)   local iface_arg="-i $aiface";;
+	    any) iface_arg=;;
+	    !*)  iface_arg="-i ! ${aiface:1}";;
+	    *)   iface_arg="-i $aiface";;
 	esac
 
 	for aoface in $oface; do
 	    case "$aoface" in
-		any) local oface_arg=;;
-	        !*)  local oface_arg="-o ! ${aoface:1}";;
-		*)   local oface_arg="-o $aoface";;
+		any) oface_arg=;;
+	        !*)  oface_arg="-o ! ${aoface:1}";;
+		*)   oface_arg="-o $aoface";;
 	    esac
 
 	    for asrc in $src; do
 		case "$asrc" in
-		    any) local src_arg=;;
-	            !*)  local src_arg="-s ! ${asrc:1}";;
-		    *)   local src_arg="-s $asrc";;
+		    any) src_arg=;;
+	            !*)  src_arg="-s ! ${asrc:1}";;
+		    *)   src_arg="-s $asrc";;
 		esac
 
 		for adst in $dst; do
 		    case "$adst" in
-			any) local dst_arg=;;
-	                !*)  local dst_arg="-d ! ${adst:1}";;
-			*)   local dst_arg="-d $adst";;
+			any) dst_arg=;;
+	                !*)  dst_arg="-d ! ${adst:1}";;
+			*)   dst_arg="-d $adst";;
 		    esac
 
 		    for aservice in $service; do
@@ -796,32 +798,32 @@ _fwy_rule()
 
 			for aproto in $proto; do
 			    case "$aproto" in
-				any) local proto_arg=;;
-				!*)  local proto_arg="-p ! ${aproto:1}";;
-				*)   local proto_arg="-p $aproto";;
+				any) proto_arg=;;
+				!*)  proto_arg="-p ! ${aproto:1}";;
+				*)   proto_arg="-p $aproto";;
 			    esac
 
 			    for aicmptype in $icmptype; do
 				case "$aicmptype" in
-				    any) local icmptype_arg=;;
-				    !*)  local icmptype_arg="--icmp-type ! ${aicmptype:1}";;
-				    *)   local icmptype_arg="--icmp-type $aicmptype";;
+				    any) icmptype_arg=;;
+				    !*)  icmptype_arg="--icmp-type ! ${aicmptype:1}";;
+				    *)   icmptype_arg="--icmp-type $aicmptype";;
 				esac
 
 				if [ "${FIREWALLY_USE_MPORT:-0}" != 0 -a "$srcport" != any ]; then
 				    local -a sports=($srcport)
 				    if [ "${#sports[@]}" -gt 1 -a "${#sports[@]}" -le 7 ]; then
 					local sportsc="${sports[@]}"
-					local srcport_arg="-m mport --sports ${sportsc// /,}"
+					srcport_arg="-m mport --sports ${sportsc// /,}"
 					srcport=__mport__
 				    fi
 				fi
 				for asrcport in $srcport; do
 				    case "$asrcport" in
-					any) local srcport_arg=;;
+					any) srcport_arg=;;
 					__mport__);;
-					!*)  local srcport_arg="--sport ! ${asrcport:1}";;
-					*)   local srcport_arg="--sport $asrcport";;
+					!*)  srcport_arg="--sport ! ${asrcport:1}";;
+					*)   srcport_arg="--sport $asrcport";;
 				    esac
 
 				    if [ "${FIREWALLY_USE_MPORT:-0}" != 0 -a "$dstport" != any ]; then
@@ -834,55 +836,55 @@ _fwy_rule()
 				    fi
 				    for adstport in $dstport; do
 					case "$adstport" in
-					    any) local dstport_arg=;;
+					    any) dstport_arg=;;
 					    __mport__);;
-					    !*)  local dstport_arg="--dport ! ${adstport:1}";;
-					    *)   local dstport_arg="--dport $adstport";;
+					    !*)  dstport_arg="--dport ! ${adstport:1}";;
+					    *)   dstport_arg="--dport $adstport";;
 					esac
 
 					for amac in $mac; do
 					    case "$amac" in
-						any) local mac_arg=;;
-						!*)  local mac_arg="-m mac ! --mac-source ${amac:1}";;
-						*)   local mac_arg="-m mac --mac-source $amac";;
+						any) mac_arg=;;
+						!*)  mac_arg="-m mac ! --mac-source ${amac:1}";;
+						*)   mac_arg="-m mac --mac-source $amac";;
 					    esac
 
 					    for amark in $mark; do
 						case "$amark" in
-						    any) local mark_arg=;;
-						    !*)  local mark_arg="-m mark ! --mark ${amark:1}";;
-						    *)   local mark_arg="-m mark --mark $amark";;
+						    any) mark_arg=;;
+						    !*)  mark_arg="-m mark ! --mark ${amark:1}";;
+						    *)   mark_arg="-m mark --mark $amark";;
 						esac
 
 						for adscp in $dscp; do
 						    case "$adscp" in
-							any) local dscp_arg=;;
-						        !*)  local dscp_arg="-m dscp ! --dscp ${adscp:1}";;
-							*)   local dscp_arg="-m dscp --dscp $adscp";;
+							any) dscp_arg=;;
+						        !*)  dscp_arg="-m dscp ! --dscp ${adscp:1}";;
+							*)   dscp_arg="-m dscp --dscp $adscp";;
 						    esac
 
 						    for atos in $tos; do
 							case "$atos" in
-							    any) local tos_arg=;;
-						            !*)  local tos_arg="-m tos ! --tos ${atos:1}";;
-							    *)   local tos_arg="-m tos --tos $atos";;
+							    any) tos_arg=;;
+						            !*)  tos_arg="-m tos ! --tos ${atos:1}";;
+							    *)   tos_arg="-m tos --tos $atos";;
 							esac
 
 							case "$state" in
-							    any) local state_arg=;;
-							    !*)  local state_arg="-m state ! --state ${state:1}";;
-							    *)   local state_arg="-m state --state $state";;
+							    any) state_arg=;;
+							    !*)  state_arg="-m state ! --state ${state:1}";;
+							    *)   state_arg="-m state --state $state";;
 							esac
 
 							if [ -z "$limit" ]; then
-							    local limit_arg=
+							    limit_arg=
 							elif [ -z "$limit_burst" ]; then
-							    local limit_arg="-m limit --limit $limit"
+							    limit_arg="-m limit --limit $limit"
 							else
-							    local limit_arg="-m limit --limit $limit --limit-burst $limit_burst"
+							    limit_arg="-m limit --limit $limit --limit-burst $limit_burst"
 							fi
 
-							local base_cmd="$iface_arg $oface_arg $src_arg $dst_arg \
+							base_cmd="$iface_arg $oface_arg $src_arg $dst_arg \
 							    $proto_arg $icmptype_arg $srcport_arg $dstport_arg \
 							    $mac_arg $mark_arg $dscp_arg $tos_arg $state_arg \
 							    $match $limit_arg"
@@ -1410,6 +1412,27 @@ from()
     return 0
 }
 
+# mac interface ip mac
+mac()
+{
+    local _FWY_COMMAND="$FUNCNAME $@"
+
+    [ -d "${_FWY_TMP}/fw" ] || _fwy_initialize
+    local _FWY_TABLE=filter _FWY_CHAIN _FWY_RULES=$_FWY_RULES_MAC
+
+    if ! _fwy_chain_exists check_mac; then
+	FIREWALLY_filter_check_mac_POLICY=
+	_fwy_create_chain check_mac || return 1
+	_fwy_create_chain mac_invalid || return 1
+	_FWY_CHAIN=INPUT
+	_fwy_iptables -m state --state NEW -j check_mac || return 1
+	_FWY_CHAIN=FORWARD
+	_fwy_iptables -m state --state NEW -j check_mac || return 1
+    fi
+    _FWY_CHAIN=check_mac
+    _fwy_rule goto mac_invalid iface "$1" src "$2" mac "!$3"
+}
+
 # }}}
 
 # {{{ Main
@@ -1634,7 +1657,7 @@ EOF
 		    printf "\n# FAILED\n"
 		else
 		    case "$1" in
-			chain | zone | from | *=*)
+			chain | zone | from | mac | *=*)
 			    echo >> "${_FWY_NEW_CONF}"
 			    ;;
 			*)
@@ -1674,8 +1697,8 @@ _fwy_verbose "Preprocessing source"
 [ -r "$FIREWALLY_CONFIG" ] || _fwy_fatal "cannot read configuration file '$FIREWALLY_CONFIG'"
 
 ${_FWY_AWK_CMD} "/^[[:space:]]*(accept|chain|dnat|drop|from|goto|imq|iptables|jump|log|loglimit\
-|masq|masquerade|policy|protection|redirect|reject|ret|rule|service|setdscp|setmark|settos|snat\
-|target|version|zone)\\>/ \
+mac||masq|masquerade|policy|protection|redirect|reject|ret|rule|service|setdscp|setmark|settos|\
+snat|target|version|zone)\\>/ \
 { printf \"_FWY_LINENO=%d; \", NR }
 { print }" "$FIREWALLY_CONFIG" > "${_FWY_TMP}/source.config" || \
     _fwy_fatal "cannot convert source file"
