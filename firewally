@@ -312,7 +312,7 @@ _fwy_create_chain()
 # Create the initial firewall structure
 _fwy_initialize()
 {
-    local _FWY_CURRENT_COMMAND= _FWY_LINENO=
+    local _FWY_RULES=rules _FWY_CURRENT_COMMAND= _FWY_LINENO=
 
     _fwy_verbose "Initializing"
 
@@ -966,9 +966,11 @@ policy()
     local _FWY_RULES=policy
     local args="$@"
 
-    if [ -z "$args" -o "$args" = return ]; then
-	: > "${_FWY_TMP}/fw/${_FWY_CURRENT_TABLE}/${_FWY_CURRENT_CHAIN}/policy"
-    else
+    # Initialize if not done already
+    [ -d "${_FWY_TMP}/fw" ] || _fwy_initialize
+
+    : > "${_FWY_TMP}/fw/${_FWY_CURRENT_TABLE}/${_FWY_CURRENT_CHAIN}/policy"
+    if [ -n "$args" -a "$args" != return ]; then
         _fwy_rule "$@"
     fi
 }
