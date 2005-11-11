@@ -1883,7 +1883,7 @@ case "$_FWY_MODE" in
     status)
 	# Show running firewall
 	if [ -f /proc/net/ip_tables_names ]; then
-	    for table in $(</proc/net/ip_tables_names); do
+	    for table in $(sort /proc/net/ip_tables_names); do
 		echo
 		echo "--- $table ---------------------------------------------------------------------"
 		echo
