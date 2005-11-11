@@ -1,6 +1,7 @@
 TEST mport: basic
 firewally
 FIREWALLY_USE_MPORT=1
+FIREWALLY_MPORT_MATCH=mport
 accept proto tcp dport smtp,ssh,www
 EOF
 *filter
@@ -22,6 +23,7 @@ COMMIT
 TEST mport: optimization
 firewally
 FIREWALLY_USE_MPORT=1
+FIREWALLY_MPORT_MATCH=mport
 accept proto tcp dport smtp
 EOF
 *filter
@@ -43,6 +45,7 @@ COMMIT
 TEST mport: many ports
 firewally
 FIREWALLY_USE_MPORT=1
+FIREWALLY_MPORT_MATCH=mport
 accept proto tcp dport smtp,ssh,www,socks,pop3,pop3s,imap,imaps
 EOF
 *filter

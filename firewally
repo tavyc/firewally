@@ -31,7 +31,8 @@ _FWY_CONFIG_VERSION=1
 
 # Basic options
 : "${FIREWALLY_CONFIG:=/etc/firewally/firewall.conf}"
-: "${FIREWALLY_USE_MPORT:=1}"
+: "${FIREWALLY_USE_MPORT:=}"
+: "${FIREWALLY_MPORT_MATCH:=}"
 : "${FIREWALLY_USE_IPTABLES_RESTORE:=1}"
 FIREWALLY_STATEFUL=1
 FIREWALLY_ROUTING=1
@@ -287,6 +288,18 @@ _fwy_valid_name()
 	    ;;
     esac
     return 0
+}
+
+# _fwy_match_exists name
+_fwy_match_exists()
+{
+    local name="$1"
+    local moddir="/lib/modules/$(uname -r)/kernel/net/ipv4/netfilter"
+
+    ${_FWY_IPTABLES_CMD} -m "$name" --help >/dev/null 2>&1 || return 1
+    [ -n "`${_FWY_AWK_CMD} \"/^${name}\$/ { print }\" /proc/net/ip_tables_matches 2>/dev/null`" ] && return 0
+    [ -s "$moddir/ipt_${name}.ko" -o -s "$moddir/ipt_${name}.o" ] && return 0
+    return 1
 }
 
 # }}}
@@ -875,7 +888,7 @@ _fwy_rule()
 		for asrcport in $srcport; do
 		    case "$asrcport" in
 			__mport__:*)
-			    _fwy_iptables -p "$aproto" -m mport --sports "${asrcport#__mport__:}" -j RETURN || return 1
+			    _fwy_iptables -p "$aproto" -m $FIREWALLY_MPORT_MATCH --sports "${asrcport#__mport__:}" -j RETURN || return 1
 			    ;;
 			*)
 			    _fwy_iptables -p "$aproto" --sport "$asrcport" -j RETURN || return 1
@@ -890,7 +903,7 @@ _fwy_rule()
 		for adstport in $dstport; do
 		    case "$adstport" in
 			__mport__:*)
-			    _fwy_iptables -p "$aproto" -m mport --dports "${adstport#__mport__:}" -j RETURN || return 1
+			    _fwy_iptables -p "$aproto" -m $FIREWALLY_MPORT_MATCH --dports "${adstport#__mport__:}" -j RETURN || return 1
 			    ;;
 			*)
 			    _fwy_iptables -p "$aproto" --dport "$adstport" -j RETURN || return 1
@@ -939,7 +952,7 @@ _fwy_rule()
 				    _fwy_iptables -p "${aservice%%/*}" -j RETURN || return 1
 				    ;;
 				__mport__:*)
-				    _fwy_iptables -p "${aservice%%/*}" -m mport \
+				    _fwy_iptables -p "${aservice%%/*}" -m $FIREWALLY_MPORT_MATCH \
 					--dports "${adstport#__mport__:}" -j RETURN || return 1
 				    ;;
 			       *)
@@ -1113,7 +1126,7 @@ _fwy_rule()
 				for asrcport in $srcport; do
 				    case "$asrcport" in
 					any) srcport_arg=;;
-					__mport__:*) srcport_arg="-m mport --sports ${asrcport#__mport__:}";;
+					__mport__:*) srcport_arg="-m $FIREWALLY_MPORT_MATCH --sports ${asrcport#__mport__:}";;
 					!*)  srcport_arg="--sport ! ${asrcport:1}";;
 					*)   srcport_arg="--sport $asrcport";;
 				    esac
@@ -1121,7 +1134,7 @@ _fwy_rule()
 				    for adstport in $dstport; do
 					case "$adstport" in
 					    any) dstport_arg=;;
-					    __mport__:*) dstport_arg="-m mport --dports ${adstport#__mport__:}";;
+					    __mport__:*) dstport_arg="-m $FIREWALLY_MPORT_MATCH --dports ${adstport#__mport__:}";;
 					    !*)  dstport_arg="--dport ! ${adstport:1}";;
 					    *)   dstport_arg="--dport $adstport";;
 					esac
@@ -1925,8 +1938,17 @@ _FWY_OLD_FW="${_FWY_TMP}/old.fw"
 _FWY_NEW_FW="${_FWY_TMP}/new.fw"
 
 # Check if the mport iptables match is available
-if [ "${FIREWALLY_USE_MPORT:-0}" != 0 ]; then
-    ${_FWY_IPTABLES_CMD} -m mport --help >/dev/null 2>&1 || FIREWALLY_USE_MPORT=
+if [ -z "$FIREWALLY_USE_MPORT" -o -z "$FIREWALLY_MPORT_MATCH" ]; then
+    if _fwy_match_exists multiport; then
+	FIREWALLY_USE_MPORT=1
+	: "${FIREWALLY_MPORT_MATCH:=multiport}"
+    elif _fwy_match_exists mport; then
+	FIREWALLY_USE_MPORT=1
+	: "${FIREWALLY_MPORT_MATCH:=mport}"
+    else
+	FIREWALLY_USE_MPORT=0
+	: "${FIREWALLY_MPORT_MATCH:=multiport}"
+    fi
 fi
 
 if [ "$_FWY_MODE" = explain ]; then
