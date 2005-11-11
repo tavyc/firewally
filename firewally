@@ -25,7 +25,7 @@ esac
 shopt -s extglob
 
 # Version
-FIREWALLY_VERSION='1.2'
+FIREWALLY_VERSION='1.3'
 FIREWALLY_REVISION='$Id$'
 _FWY_CONFIG_VERSION=1
 
