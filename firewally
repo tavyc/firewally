@@ -1939,7 +1939,8 @@ _FWY_NEW_FW="${_FWY_TMP}/new.fw"
 
 # Check if the mport iptables match is available
 if [ -z "$FIREWALLY_USE_MPORT" -o -z "$FIREWALLY_MPORT_MATCH" ]; then
-    if _fwy_match_exists multiport; then
+    if ${_FWY_AWK_CMD} "BEGIN { split(\"`uname -r`\", a, /[^0-9]/); exit(a[2]<6 || (a[2]==6 && a[3]<14)) }" \
+        && _fwy_match_exists multiport; then
 	FIREWALLY_USE_MPORT=1
 	: "${FIREWALLY_MPORT_MATCH:=multiport}"
     elif _fwy_match_exists mport; then
