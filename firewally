@@ -2024,10 +2024,12 @@ if [ "$_FWY_MODE" != debug ]; then
 
     # Save old firewall
     _fwy_verbose "Saving old firewall"
+    ${_FWY_TOUCH_CMD} "${_FWY_OLD_FW}"
     if [ -f /proc/net/ip_tables_names ]; then
 	_fwy_iptables_save -c > "${_FWY_OLD_FW}" || _fwy_fatal "cannot save current firewall"
-    else
-	${_FWY_CAT_CMD} > "${_FWY_OLD_FW}" <<EOF
+    fi
+    if ${_FWY_AWK_CMD} '/^\*filter/ { exit(1) }' "${_FWY_OLD_FW}"; then
+	${_FWY_CAT_CMD} >> "${_FWY_OLD_FW}" <<EOF
 *filter
 :INPUT ACCEPT [0:0]
 :FORWARD ACCEPT [0:0]
