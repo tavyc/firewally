@@ -33,7 +33,7 @@ trap "rm -rf $T" EXIT
 
 firewally()
 {
-    command ./firewally debug /dev/stdin >$T/tmp_out
+    command ./firewally debug /proc/self/fd/0 >$T/tmp_out
     local res=$?
     sed '/^#/d' <$T/tmp_out
     return $res
