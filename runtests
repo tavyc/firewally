@@ -20,7 +20,7 @@ unset LC_MONETARY LC_NAME LC_NUMERIC LC_PAPER LC_TELEPHONE LC_TIME
 
 export FIREWALLY_SIMPLE_ERRORS=1
 
-T=`mktemp -d -t fwy.XXXXXX` || {
+T=`mktemp -d ${TMPDIR:-/tmp}/fwy.XXXXXX` || {
     echo >&2 "cannot create temporary directory"
     exit 1
 }

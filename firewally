@@ -1931,7 +1931,7 @@ case "$_FWY_MODE" in
 esac
 
 # Initialize working environment
-_FWY_TMP=`${_FWY_MKTEMP_CMD} -d -t fwy.XXXXXX` || _fwy_fatal "cannot create temporary directory"
+_FWY_TMP=`${_FWY_MKTEMP_CMD} -d ${TMPDIR:-/tmp}/fwy.XXXXXX` || _fwy_fatal "cannot create temporary directory"
 trap _fwy_cleanup EXIT
 trap _fwy_interrupt INT TERM
 _FWY_OLD_FW="${_FWY_TMP}/old.fw"
