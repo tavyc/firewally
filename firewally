@@ -411,7 +411,7 @@ _fwy_clear()
 /^COMMIT/ { print }
 ' policy="$policy" allow="$allow" | \
 	${_FWY_IPTABLES_RESTORE_CMD}
-    return $[ ${PIPESTATUS[0]} + ${PIPESTATUS[1]} + ${PIPESTATUS[2]} ]
+    return $[ ${PIPESTATUS[0]} + ${PIPESTATUS[1]:-0} + ${PIPESTATUS[2]:-0} ]
 }
 
 # _fwy_load_restore
