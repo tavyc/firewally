@@ -107,12 +107,10 @@ EOF
 -A INPUT -s 42.0.0.0/8 -j unroutable
 -A INPUT -s 49.0.0.0/8 -j unroutable
 -A INPUT -s 50.0.0.0/8 -j unroutable
--A INPUT -s 77.0.0.0/8 -j unroutable
--A INPUT -s 78.0.0.0/7 -j unroutable
 -A INPUT -s 92.0.0.0/6 -j unroutable
 -A INPUT -s 96.0.0.0/4 -j unroutable
 -A INPUT -s 112.0.0.0/5 -j unroutable
--A INPUT -s 120.0.0.0/6 -j unroutable
+-A INPUT -s 120.0.0.0/8 -j unroutable
 -A INPUT -s 127.0.0.0/8 -j unroutable
 -A INPUT -s 173.0.0.0/8 -j unroutable
 -A INPUT -s 174.0.0.0/7 -j unroutable
