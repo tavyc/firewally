@@ -202,9 +202,11 @@ service_sunrpc="$service_portmap"
 # Find a program in $PATH. Set var to the full path of command.
 _fwy_find_cmd()
 {
-    local -a cmd=(`type -a -p $2`)
-    [ $? -ne 0 -o ! -x "${cmd[0]}" ] && _fwy_fatal "Program '$2' not found in system path ($PATH)"
-    eval "$1=\"\${cmd[0]}\""
+    local var=$1
+    shift
+    local -a cmd=(`type -a -p "$@"`)
+    [ $? -ne 0 -o ! -x "${cmd[0]}" ] && _fwy_fatal "Program '$1' not found in system path ($PATH)"
+    eval "$var=\"\${cmd[0]}\""
 }
 
 # _fwy_verbose args...
@@ -1864,17 +1866,17 @@ if [ -z "$_FWY_MODE" ]; then
 fi
 
 # Locate required commands
-_fwy_find_cmd _FWY_AWK_CMD gawk
+_fwy_find_cmd _FWY_AWK_CMD gawk awk
 _fwy_find_cmd _FWY_CAT_CMD cat
 _fwy_find_cmd _FWY_IPTABLES_CMD iptables
 _fwy_find_cmd _FWY_IPTABLES_RESTORE_CMD iptables-restore
 _fwy_find_cmd _FWY_IPTABLES_SAVE_CMD iptables-save
-_fwy_find_cmd _FWY_LESS_CMD less
-_fwy_find_cmd _FWY_LOGGER_CMD logger
-_fwy_find_cmd _FWY_LSMOD_CMD lsmod
+_fwy_find_cmd _FWY_LESS_CMD less more
+_fwy_find_cmd _FWY_LOGGER_CMD logger true
+_fwy_find_cmd _FWY_LSMOD_CMD lsmod echo
 _fwy_find_cmd _FWY_MKDIR_CMD mkdir
 _fwy_find_cmd _FWY_MKTEMP_CMD mktemp
-_fwy_find_cmd _FWY_MODPROBE_CMD modprobe
+_fwy_find_cmd _FWY_MODPROBE_CMD modprobe insmod false
 _fwy_find_cmd _FWY_RM_CMD rm
 _fwy_find_cmd _FWY_TOUCH_CMD touch
 
@@ -2088,7 +2090,7 @@ done >> "${_FWY_NEW_FW}" || _fwy_fatal "cannot create rules"
 if [ "$_FWY_MODE" = debug ]; then
     # Show the generated firewall
     if [ -t 1 ]; then
-	${_FWY_LESS_CMD} -F "${_FWY_NEW_FW}"
+	${_FWY_LESS_CMD} "${_FWY_NEW_FW}"
     else
 	${_FWY_CAT_CMD} "${_FWY_NEW_FW}"
     fi
