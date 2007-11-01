@@ -2139,21 +2139,21 @@ fi
 # Load connection-tracking / nat modules
 _fwy_verbose "Loading kernel conntrack/nat modules"
 modules=
-modules_skip=`${_FWY_LSMOD_CMD} | ${_FWY_AWK_CMD} '/^ip_(conntrack|nat)_/ { printf "%s ", $1 }'`
+modules_skip=`${_FWY_LSMOD_CMD} | ${_FWY_AWK_CMD} '/^(ip|nf)_(conntrack|nat)_/ { printf "%s ", $1 }'`
 moddir=/lib/modules/$(uname -r)/kernel/net/ipv4/netfilter
 for module in $FIREWALLY_MODULES; do
     case "$module" in
 	all | ALL)
 	    if [ "${FIREWALLY_STATEFUL:-0}" != 0 ]; then
 		# List conntrack modules
-		for mod in $moddir/ip_conntrack_*.*; do
+		for mod in $moddir/{ip,nf}_conntrack_*.*; do
 		    [ -f "$mod" ] || continue
 		    basemod="${mod##*/}"
 		    modules="$modules ${basemod%%.*}"
 		done
 		# List nat modules if the firewall has the "nat" table
 		if [ -d "${_FWY_TMP}/fw/nat" ]; then
-		    for mod in $moddir/ip_nat_*.*; do
+		    for mod in $moddir/{ip,nf}_nat_*.*; do
 			[ -f "$mod" ] || continue
 			basemod="${mod##*/}"
 			modules="$modules ${basemod%%.*}"
